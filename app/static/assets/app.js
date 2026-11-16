@@ -16,8 +16,11 @@
     sidebarCollapsed: false,
     dateFilter: '14/11/2026',
     
-    /* Overview Page State */
+    /* Theme & Overview State */
+    theme: localStorage.getItem('bsr_theme') || 'light',
     overviewTab: 'all',
+    activeOverviewInstrument: 'brent_physical',
+    overviewChartRange: '1M',
     
     /* Market Data Page State */
     selectedInstruments: ['brent_physical', 'crack_gasoline_physical'],
@@ -164,11 +167,11 @@
     return d;
   }
 
-  /* Mini Sparkline with Smooth Gradient & Glowing End Point */
-  function renderSparklineSvg(spark, isPos = true, height = 40) {
+  /* Mini Sparkline with Smooth Gradient & Sleek Beacon Dot (Apple Stocks / Stripe Grade) */
+  function renderSparklineSvg(spark, isPos = true, height = 42) {
     if (!spark || !spark.length) return '';
-    const W = 220, H = height;
-    const pad = { t: 5, b: 5, l: 2, r: 4 };
+    const W = 240, H = height;
+    const pad = { t: 6, b: 6, l: 4, r: 6 };
     const values = spark.map(p => p.value);
     const min = Math.min(...values), max = Math.max(...values);
     const span = max - min || 1;
@@ -179,7 +182,7 @@
 
     const pathD = getSmoothPath(pts);
     const areaD = `${pathD} L ${pts[pts.length - 1].x.toFixed(1)} ${H} L ${pts[0].x.toFixed(1)} ${H} Z`;
-    const strokeColor = isPos ? '#10B981' : '#F43F5E';
+    const strokeColor = isPos ? 'var(--pos-green)' : 'var(--neg-red)';
     const gradId = `spark-grad-${Math.random().toString(36).substr(2, 6)}`;
     const lastPt = pts[pts.length - 1];
 
@@ -187,37 +190,129 @@
       <svg class="sparkline-svg" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">
         <defs>
           <linearGradient id="${gradId}" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stop-color="${strokeColor}" stop-opacity="0.32"/>
+            <stop offset="0%" stop-color="${strokeColor}" stop-opacity="0.18"/>
             <stop offset="100%" stop-color="${strokeColor}" stop-opacity="0.0"/>
           </linearGradient>
         </defs>
         <path d="${areaD}" fill="url(#${gradId})"/>
-        <path d="${pathD}" fill="none" stroke="${strokeColor}" stroke-width="2.2" stroke-linecap="round"/>
-        <circle cx="${lastPt.x.toFixed(1)}" cy="${lastPt.y.toFixed(1)}" r="3.5" fill="${strokeColor}" filter="drop-shadow(0 0 4px ${strokeColor})"/>
+        <path d="${pathD}" fill="none" stroke="${strokeColor}" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+        <circle cx="${lastPt.x.toFixed(1)}" cy="${lastPt.y.toFixed(1)}" r="3.5" fill="${strokeColor}" stroke="var(--bg-card)" stroke-width="2"/>
       </svg>
     `;
   }
+  /* Single Series In-Place Chart (TradingView / Apple Stocks Grade) */
+  function renderCleanChartSvg({ series, name1 = 'Giá trị', unit1 = '', decimals1 = 2, range = '1M', color1 = '#007A87', height = 260, chartId = 'clean-chart' }) {
+    const W = 900, H = height;
+    const pad = { l: 65, r: 35, t: 25, b: 35 };
+    const pointsCount = range === '1D' ? 14 : range === '1W' ? 20 : range === '1M' ? 30 : range === '3M' ? 60 : 90;
+    const rawData = (series || []).slice(-pointsCount);
+    if (!rawData.length) return '<div class="empty-state">Không có dữ liệu cho khoảng thời gian này</div>';
 
-  /* Multi-Axis Time Series Chart Generator with Neon Glow & Rich Grid */
+    const values = rawData.map(d => d.value);
+    const minVal = Math.min(...values) * 0.99;
+    const maxVal = Math.max(...values) * 1.01;
+    const span = maxVal - minVal || 1;
+
+    const pts = rawData.map((pt, i) => ({
+      x: pad.l + (i / (rawData.length - 1)) * (W - pad.l - pad.r),
+      y: pad.t + (1 - (pt.value - minVal) / span) * (H - pad.t - pad.b),
+      date: pt.date,
+      value: pt.value
+    }));
+
+    const pathD = getSmoothPath(pts);
+    const areaD = `${pathD} L ${pts[pts.length - 1].x.toFixed(1)} ${H - pad.b} L ${pts[0].x.toFixed(1)} ${H - pad.b} Z`;
+    const gradId = `clean-chart-grad-${chartId}`;
+    const glowId = `clean-chart-glow-${chartId}`;
+    const lastPt = pts[pts.length - 1];
+
+    /* Horizontal gridlines (3 clean dashed lines) */
+    let gridLines = '', yLabels = '';
+    for (let i = 0; i <= 2; i++) {
+      const gy = pad.t + (i / 2) * (H - pad.t - pad.b);
+      const v = maxVal - (i / 2) * (maxVal - minVal);
+      gridLines += `<line x1="${pad.l}" y1="${gy.toFixed(1)}" x2="${(W - pad.r).toFixed(1)}" y2="${gy.toFixed(1)}" stroke="var(--chart-grid)" stroke-width="1" stroke-dasharray="3,3"/>`;
+      yLabels += `<text x="${pad.l - 12}" y="${(gy + 4).toFixed(1)}" font-size="11" font-family="var(--font-mono)" fill="var(--text-muted)" text-anchor="end" font-weight="600">${fmtNum(v, decimals1)}</text>`;
+    }
+
+    /* X Axis dates (5 clean points) */
+    let xLabels = '';
+    const dateIntervals = [0, Math.floor(pts.length * 0.25), Math.floor(pts.length * 0.5), Math.floor(pts.length * 0.75), pts.length - 1];
+    dateIntervals.forEach(idx => {
+      const p = pts[idx];
+      if (!p) return;
+      const dStr = p.date ? new Date(p.date).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' }) : `T-${idx}`;
+      xLabels += `<text x="${p.x.toFixed(1)}" y="${H - 12}" font-size="10.5" fill="var(--text-muted)" text-anchor="middle" font-weight="500">${dStr}</text>`;
+      xLabels += `<line x1="${p.x.toFixed(1)}" y1="${H - pad.b}" x2="${p.x.toFixed(1)}" y2="${H - pad.b + 4}" stroke="var(--chart-grid)" stroke-width="1"/>`;
+    });
+
+    const activeIdx = state.hoverChartIndex != null ? Math.min(state.hoverChartIndex, pts.length - 1) : pts.length - 1;
+    const curP = pts[activeIdx];
+    const tooltipX = Math.max(pad.l + 65, Math.min(curP.x, W - pad.r - 65));
+
+    return `
+      <div class="clean-chart-container" style="position:relative">
+        <svg class="chart-svg-main" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">
+          <defs>
+            <linearGradient id="${gradId}" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stop-color="${color1}" stop-opacity="0.22"/>
+              <stop offset="60%" stop-color="${color1}" stop-opacity="0.05"/>
+              <stop offset="100%" stop-color="${color1}" stop-opacity="0.0"/>
+            </linearGradient>
+            <filter id="${glowId}" x="-10%" y="-10%" width="120%" height="120%">
+              <feDropShadow dx="0" dy="3" stdDeviation="4" flood-color="${color1}" flood-opacity="0.25"/>
+            </filter>
+          </defs>
+
+          ${gridLines}
+          ${yLabels}
+          ${xLabels}
+
+          <!-- Area under curve -->
+          <path d="${areaD}" fill="url(#${gradId})"/>
+          <!-- Smooth Line -->
+          <path d="${pathD}" fill="none" stroke="${color1}" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" filter="url(#${glowId})"/>
+
+          <!-- Beacon dot at latest point -->
+          <circle cx="${lastPt.x.toFixed(1)}" cy="${lastPt.y.toFixed(1)}" r="8" fill="${color1}" fill-opacity="0.25"/>
+          <circle cx="${lastPt.x.toFixed(1)}" cy="${lastPt.y.toFixed(1)}" r="4.5" fill="#FFFFFF" stroke="${color1}" stroke-width="2.5"/>
+
+          <!-- Interactive Hover Hairline -->
+          <line x1="${curP.x.toFixed(1)}" y1="${pad.t}" x2="${curP.x.toFixed(1)}" y2="${H - pad.b}" stroke="var(--text-muted)" stroke-width="1.2" stroke-dasharray="3,3" opacity="0.6"/>
+          <circle cx="${curP.x.toFixed(1)}" cy="${curP.y.toFixed(1)}" r="5.5" fill="${color1}" stroke="#FFFFFF" stroke-width="2"/>
+
+          <!-- Floating Tooltip Badge -->
+          <g transform="translate(${tooltipX.toFixed(1)}, ${(Math.max(curP.y - 42, pad.t + 10)).toFixed(1)})">
+            <rect x="-70" y="-14" width="140" height="28" rx="6" fill="var(--chart-tooltip-bg)" stroke="var(--border-card)" stroke-width="1"/>
+            <text x="0" y="4" text-anchor="middle" font-size="11" font-weight="700" fill="var(--chart-tooltip-text)">
+              ${fmtNum(curP.value, decimals1)} ${esc(unit1)} (${curP.date ? new Date(curP.date).toLocaleDateString('vi-VN', {day:'2-digit', month:'2-digit'}) : 'Hôm nay'})
+            </text>
+          </g>
+        </svg>
+      </div>
+    `;
+  }
+
+  /* Multi-Axis Time Series Chart Generator (Dual Y-Axis, Clean & High-Tech) */
   function renderMultiAxisChart(instrumentsToDraw, mode = 'multiaxis', range = '1M') {
-    const W = 900, H = 300;
-    const pad = { l: 65, r: 65, t: 30, b: 40 };
+    const W = 900, H = 280;
+    const pad = { l: 65, r: 65, t: 25, b: 35 };
     const inst1 = instrumentsToDraw[0];
     const inst2 = instrumentsToDraw[1];
 
     if (!inst1) return '<div class="empty-state">Vui lòng chọn ít nhất một chỉ số để vẽ biểu đồ</div>';
 
-    const pointsCount = range === '1D' ? 14 : range === '1W' ? 20 : range === '1M' ? 30 : 90;
+    const pointsCount = range === '1D' ? 14 : range === '1W' ? 20 : range === '1M' ? 30 : range === '3M' ? 60 : 90;
     const rawData1 = (inst1.series || []).slice(-pointsCount);
     const rawData2 = inst2 ? (inst2.series || []).slice(-pointsCount) : null;
 
     const values1 = rawData1.map(d => d.value);
-    const min1 = Math.min(...values1) * 0.985;
-    const max1 = Math.max(...values1) * 1.015;
+    const min1 = Math.min(...values1) * 0.99;
+    const max1 = Math.max(...values1) * 1.01;
 
     const values2 = rawData2 ? rawData2.map(d => d.value) : [];
-    const min2 = rawData2 ? Math.min(...values2) * 0.985 : 0;
-    const max2 = rawData2 ? Math.max(...values2) * 1.015 : 100;
+    const min2 = rawData2 ? Math.min(...values2) * 0.99 : 0;
+    const max2 = rawData2 ? Math.max(...values2) * 1.01 : 100;
 
     const pts1 = rawData1.map((pt, i) => ({
       x: pad.l + (i / (rawData1.length - 1)) * (W - pad.l - pad.r),
@@ -239,16 +334,16 @@
     const path2 = pts2 ? getSmoothPath(pts2) : '';
     const area2 = pts2 ? `${path2} L ${pts2[pts2.length - 1].x.toFixed(1)} ${H - pad.b} L ${pts2[0].x.toFixed(1)} ${H - pad.b} Z` : '';
 
-    /* Grid lines & Y Axis Labels */
+    /* Grid lines & Y Axis Labels (3 horizontal lines) */
     let gridLines = '', yLabels = '';
-    for (let i = 0; i <= 4; i++) {
-      const gy = pad.t + (i / 4) * (H - pad.t - pad.b);
-      const v1 = max1 - (i / 4) * (max1 - min1);
-      gridLines += `<line x1="${pad.l}" y1="${gy.toFixed(1)}" x2="${(W - pad.r).toFixed(1)}" y2="${gy.toFixed(1)}" stroke="rgba(255,255,255,0.06)" stroke-dasharray="3,3"/>`;
-      yLabels += `<text x="${pad.l - 12}" y="${(gy + 4).toFixed(1)}" font-size="10.5" font-family="var(--font-mono)" fill="#00E5FF" text-anchor="end" font-weight="600">${fmtNum(v1, inst1.decimals)}</text>`;
+    for (let i = 0; i <= 2; i++) {
+      const gy = pad.t + (i / 2) * (H - pad.t - pad.b);
+      const v1 = max1 - (i / 2) * (max1 - min1);
+      gridLines += `<line x1="${pad.l}" y1="${gy.toFixed(1)}" x2="${(W - pad.r).toFixed(1)}" y2="${gy.toFixed(1)}" stroke="var(--chart-grid)" stroke-width="1" stroke-dasharray="3,3"/>`;
+      yLabels += `<text x="${pad.l - 12}" y="${(gy + 4).toFixed(1)}" font-size="11" font-family="var(--font-mono)" fill="var(--accent-teal)" text-anchor="end" font-weight="700">${fmtNum(v1, inst1.decimals)}</text>`;
       if (inst2 && mode === 'multiaxis') {
-        const v2 = max2 - (i / 4) * (max2 - min2);
-        yLabels += `<text x="${(W - pad.r + 12).toFixed(1)}" y="${(gy + 4).toFixed(1)}" font-size="10.5" font-family="var(--font-mono)" fill="#F59E0B" text-anchor="start" font-weight="600">${fmtNum(v2, inst2.decimals)}</text>`;
+        const v2 = max2 - (i / 2) * (max2 - min2);
+        yLabels += `<text x="${(W - pad.r + 12).toFixed(1)}" y="${(gy + 4).toFixed(1)}" font-size="11" font-family="var(--font-mono)" fill="var(--accent-gold)" text-anchor="start" font-weight="700">${fmtNum(v2, inst2.decimals)}</text>`;
       }
     }
 
@@ -259,98 +354,78 @@
       const p = pts1[idx];
       if (!p) return;
       const dStr = p.date ? new Date(p.date).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' }) : `T-${idx}`;
-      xLabels += `<text x="${p.x.toFixed(1)}" y="${H - 12}" font-size="10" fill="#94A3B8" text-anchor="middle">${dStr}</text>`;
-      xLabels += `<line x1="${p.x.toFixed(1)}" y1="${H - pad.b}" x2="${p.x.toFixed(1)}" y2="${H - pad.b + 5}" stroke="rgba(255,255,255,0.15)"/>`;
+      xLabels += `<text x="${p.x.toFixed(1)}" y="${H - 12}" font-size="10.5" fill="var(--text-muted)" text-anchor="middle" font-weight="500">${dStr}</text>`;
+      xLabels += `<line x1="${p.x.toFixed(1)}" y1="${H - pad.b}" x2="${p.x.toFixed(1)}" y2="${H - pad.b + 4}" stroke="var(--chart-grid)" stroke-width="1"/>`;
     });
 
-    /* Event markers with glowing pins */
-    const eventMarkers = D.events.map((ev, idx) => {
-      const posRatio = (idx + 1) / (D.events.length + 1);
-      const mx = pad.l + posRatio * (W - pad.l - pad.r);
-      const my = pad.t + 35 + (idx % 2) * 45;
-      return `
-        <g class="chart-event-pin" data-action="open-event" data-event-idx="${idx}" style="cursor:pointer">
-          <line x1="${mx.toFixed(1)}" y1="${pad.t}" x2="${mx.toFixed(1)}" y2="${H - pad.b}" stroke="#F43F5E" stroke-width="1.2" stroke-dasharray="3,3" opacity="0.6"/>
-          <circle cx="${mx.toFixed(1)}" cy="${my.toFixed(1)}" r="7" fill="#F43F5E" filter="drop-shadow(0 0 6px rgba(244,63,94,0.7))"/>
-          <circle cx="${mx.toFixed(1)}" cy="${my.toFixed(1)}" r="3" fill="#FFFFFF"/>
-          <rect x="${mx - 35}" y="${my - 22}" width="70" height="16" rx="4" fill="rgba(15,23,42,0.85)" stroke="#F43F5E" stroke-width="0.8"/>
-          <text x="${mx}" y="${my - 11}" font-size="8.5" font-weight="700" fill="#F87171" text-anchor="middle">📌 SỰ KIỆN</text>
-        </g>
-      `;
-    }).join('');
-
-    /* Active Crosshair HUD index */
     const activeIdx = state.hoverChartIndex != null ? Math.min(state.hoverChartIndex, pts1.length - 1) : pts1.length - 1;
     const curP1 = pts1[activeIdx];
     const curP2 = pts2 ? pts2[activeIdx] : null;
 
     return `
-      <!-- HUD Floating Data Bar -->
-      <div style="display:flex;align-items:center;justify-content:space-between;background:rgba(0,0,0,0.3);border:1px solid var(--border-card);padding:8px 14px;border-radius:6px;margin-bottom:10px">
-        <div style="display:flex;align-items:center;gap:18px">
-          <div style="display:flex;align-items:center;gap:6px">
-            <span style="width:10px;height:10px;border-radius:50%;background:#00E5FF;box-shadow:0 0 8px #00E5FF"></span>
-            <strong style="color:#00E5FF;font-size:12.5px">${esc(inst1.name)}:</strong>
-            <span style="font-family:var(--font-mono);font-size:14px;font-weight:800;color:#FFFFFF">${fmtNum(curP1.value, inst1.decimals)}</span>
-            <span style="font-size:10.5px;color:var(--text-muted)">${esc(inst1.unit)}</span>
+      <!-- Top HUD Data Bar -->
+      <div class="clean-chart-hud">
+        <div style="display:flex;align-items:center;gap:20px">
+          <div style="display:flex;align-items:center;gap:8px">
+            <span style="width:10px;height:10px;border-radius:50%;background:var(--accent-teal);box-shadow:0 0 6px var(--accent-teal)"></span>
+            <strong style="color:var(--text-main);font-size:12.5px">${esc(inst1.name)}:</strong>
+            <span style="font-family:var(--font-mono);font-size:14px;font-weight:800;color:var(--accent-teal)">${fmtNum(curP1.value, inst1.decimals)}</span>
+            <span style="font-size:11px;color:var(--text-muted)">${esc(inst1.unit)}</span>
           </div>
 
           ${inst2 ? `
-            <div style="display:flex;align-items:center;gap:6px">
-              <span style="width:10px;height:10px;border-radius:50%;background:#F59E0B;box-shadow:0 0 8px #F59E0B"></span>
-              <strong style="color:#F59E0B;font-size:12.5px">${esc(inst2.name)}:</strong>
-              <span style="font-family:var(--font-mono);font-size:14px;font-weight:800;color:#FFFFFF">${fmtNum(curP2.value, inst2.decimals)}</span>
-              <span style="font-size:10.5px;color:var(--text-muted)">${esc(inst2.unit)}</span>
+            <div style="display:flex;align-items:center;gap:8px">
+              <span style="width:10px;height:10px;border-radius:50%;background:var(--accent-gold);box-shadow:0 0 6px var(--accent-gold)"></span>
+              <strong style="color:var(--text-main);font-size:12.5px">${esc(inst2.name)}:</strong>
+              <span style="font-family:var(--font-mono);font-size:14px;font-weight:800;color:var(--accent-gold)">${fmtNum(curP2.value, inst2.decimals)}</span>
+              <span style="font-size:11px;color:var(--text-muted)">${esc(inst2.unit)}</span>
             </div>
           ` : ''}
         </div>
 
-        <div style="font-size:11px;color:var(--text-muted)">
-          📅 Ngày dữ liệu: <strong style="color:#FFFFFF">${curP1.date ? new Date(curP1.date).toLocaleDateString('vi-VN') : '14/11/2026'}</strong>
+        <div style="font-size:11.5px;color:var(--text-muted)">
+          📅 Ngày dữ liệu: <strong style="color:var(--text-main)">${curP1.date ? new Date(curP1.date).toLocaleDateString('vi-VN') : '14/11/2026'}</strong>
         </div>
       </div>
 
-      <svg class="chart-svg-main" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" id="main-interactive-chart-svg">
+      <svg class="chart-svg-main" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">
         <defs>
-          <linearGradient id="main-chart-grad-1" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stop-color="#00E5FF" stop-opacity="0.35"/>
-            <stop offset="85%" stop-color="#00E5FF" stop-opacity="0.0"/>
+          <linearGradient id="multi-grad-1" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="var(--accent-teal)" stop-opacity="0.20"/>
+            <stop offset="60%" stop-color="var(--accent-teal)" stop-opacity="0.04"/>
+            <stop offset="100%" stop-color="var(--accent-teal)" stop-opacity="0.0"/>
           </linearGradient>
-          <linearGradient id="main-chart-grad-2" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stop-color="#F59E0B" stop-opacity="0.28"/>
-            <stop offset="85%" stop-color="#F59E0B" stop-opacity="0.0"/>
+          <linearGradient id="multi-grad-2" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="var(--accent-gold)" stop-opacity="0.16"/>
+            <stop offset="60%" stop-color="var(--accent-gold)" stop-opacity="0.03"/>
+            <stop offset="100%" stop-color="var(--accent-gold)" stop-opacity="0.0"/>
           </linearGradient>
+          <filter id="multi-glow-1" x="-10%" y="-10%" width="120%" height="120%">
+            <feDropShadow dx="0" dy="2" stdDeviation="4" flood-color="var(--accent-teal)" flood-opacity="0.25"/>
+          </filter>
         </defs>
 
-        <!-- Grids & Axes -->
         ${gridLines}
         ${yLabels}
         ${xLabels}
 
-        <!-- Area 1 (Primary Cyan) -->
-        <path d="${area1}" fill="url(#main-chart-grad-1)"/>
-        <!-- Line 1 (Smooth Bezier Neon Cyan) -->
-        <path d="${path1}" fill="none" stroke="#00E5FF" stroke-width="2.6" stroke-linecap="round" filter="drop-shadow(0 0 8px rgba(0,229,255,0.45))"/>
+        <path d="${area1}" fill="url(#multi-grad-1)"/>
+        <path d="${path1}" fill="none" stroke="var(--accent-teal)" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" filter="url(#multi-glow-1)"/>
 
-        <!-- Area 2 & Line 2 (Compare Amber Gold) -->
         ${pts2 ? `
-          <path d="${area2}" fill="url(#main-chart-grad-2)"/>
-          <path d="${path2}" fill="none" stroke="#F59E0B" stroke-width="2.2" stroke-dasharray="5,3" stroke-linecap="round" filter="drop-shadow(0 0 6px rgba(245,158,11,0.45))"/>
+          <path d="${area2}" fill="url(#multi-grad-2)"/>
+          <path d="${path2}" fill="none" stroke="var(--accent-gold)" stroke-width="2.2" stroke-dasharray="5,3" stroke-linecap="round" stroke-linejoin="round"/>
         ` : ''}
 
-        <!-- Event Markers -->
-        ${eventMarkers}
-
-        <!-- Hover Crosshair Indicator -->
-        <line x1="${curP1.x.toFixed(1)}" y1="${pad.t}" x2="${curP1.x.toFixed(1)}" y2="${H - pad.b}" stroke="rgba(255,255,255,0.3)" stroke-width="1.2" stroke-dasharray="2,2"/>
-        <circle cx="${curP1.x.toFixed(1)}" cy="${curP1.y.toFixed(1)}" r="5.5" fill="#00E5FF" stroke="#FFFFFF" stroke-width="2" filter="drop-shadow(0 0 8px #00E5FF)"/>
+        <!-- Hover Hairline Indicator -->
+        <line x1="${curP1.x.toFixed(1)}" y1="${pad.t}" x2="${curP1.x.toFixed(1)}" y2="${H - pad.b}" stroke="var(--text-muted)" stroke-width="1.2" stroke-dasharray="3,3" opacity="0.6"/>
+        <circle cx="${curP1.x.toFixed(1)}" cy="${curP1.y.toFixed(1)}" r="5.5" fill="var(--accent-teal)" stroke="#FFFFFF" stroke-width="2"/>
         ${curP2 ? `
-          <circle cx="${curP2.x.toFixed(1)}" cy="${curP2.y.toFixed(1)}" r="5" fill="#F59E0B" stroke="#FFFFFF" stroke-width="2" filter="drop-shadow(0 0 8px #F59E0B)"/>
+          <circle cx="${curP2.x.toFixed(1)}" cy="${curP2.y.toFixed(1)}" r="5" fill="var(--accent-gold)" stroke="#FFFFFF" stroke-width="2"/>
         ` : ''}
       </svg>
     `;
   }
-
   /* Navigation Structure per Plan */
   function getNavigation() {
     const groups = [
@@ -406,9 +481,14 @@
     const morning = D.morningDigest;
     const pulse = D.livePulse;
 
+    // Active instrument for In-Place Chart
+    const activeInstId = state.activeOverviewInstrument || 'brent_physical';
+    const activeInst = D.instruments.find(i => i.id === activeInstId) || D.instruments[0];
+    const canViewActive = activeInst.classification !== 'Restricted' || canRestricted;
+
     return `
-      <!-- TẦNG 1: BẢNG CHỈ SỐ THỊ TRƯỜNG ƯU TIÊN -->
-      <section style="margin-bottom: 28px;">
+      <!-- TẦNG 1: BẢNG CHỈ SỐ THỊ TRƯỜNG ƯU TIÊN & KHUNG BIỂU ĐỒ XEM NHANH TẠI CHỖ -->
+      <section style="margin-bottom: 24px;">
         <div class="overview-tab-bar">
           <div class="filter-tabs-pill">
             <button class="pill-btn ${state.overviewTab === 'all' ? 'active' : ''}" data-action="set-overview-tab" data-tab="all">Tất cả chỉ số</button>
@@ -424,7 +504,7 @@
           </button>
         </div>
 
-        <!-- DẢI 1: NHÓM ƯU TIÊN BSR & PHYSICAL -->
+        <!-- DẢI 1: NHÓM ƯU TIÊN BSR (Thẻ lớn, viền nhấn) -->
         <div class="section-subhead">
           <span>DẢI 1 — NHÓM CHỈ SỐ CỐT LÕI BSR & GIÁ PHYSICAL (ƯU TIÊN HÀNG ĐẦU)</span>
         </div>
@@ -441,8 +521,9 @@
                 </div>
               `;
             }
+            const isActive = item.id === activeInstId;
             return `
-              <div class="card card-priority" data-action="nav-market-detail" data-inst-id="${item.id}" style="cursor:pointer">
+              <div class="card card-priority ${isActive ? 'active-instrument' : ''}" data-action="select-overview-instrument" data-inst-id="${item.id}" style="cursor:pointer" title="Bấm để xem biểu đồ chi tiết tại chỗ bên dưới">
                 <div class="metric-card-top">
                   <div>
                     <div class="metric-card-name">${esc(item.name)}</div>
@@ -461,7 +542,7 @@
                     ${fmtSigned(item.change, item.decimals)} (${fmtPct(item.pct)})
                   </div>
                 </div>
-                ${renderSparklineSvg(item.spark, item.change >= 0, 44)}
+                ${renderSparklineSvg(item.spark, item.change >= 0, 36)}
               </div>
             `;
           }).join('')}
@@ -473,29 +554,101 @@
             <span>DẢI 2 — NHÓM THAM CHIẾU THỊ TRƯỜNG & VĨ MÔ (FUTURES & TỶ GIÁ)</span>
           </div>
           <div class="snapshot-grid-reference">
-            ${referenceItems.map(item => `
-              <div class="card" data-action="nav-market-detail" data-inst-id="${item.id}" style="cursor:pointer">
-                <div class="metric-card-top">
-                  <div>
-                    <div class="metric-card-name" style="font-size:12.5px">${esc(item.name)}</div>
-                    <div class="metric-card-meta">${esc(item.source)} · ${esc(item.dataStatus)}</div>
+            ${referenceItems.map(item => {
+              const isActive = item.id === activeInstId;
+              return `
+                <div class="card ${isActive ? 'active-instrument' : ''}" data-action="select-overview-instrument" data-inst-id="${item.id}" style="cursor:pointer" title="Bấm để xem biểu đồ chi tiết tại chỗ bên dưới">
+                  <div class="metric-card-top">
+                    <div>
+                      <div class="metric-card-name" style="font-size:12.5px">${esc(item.name)}</div>
+                      <div class="metric-card-meta">${esc(item.source)} · ${esc(item.dataStatus)}</div>
+                    </div>
+                    <span class="badge badge-source">${esc(item.priceType)}</span>
                   </div>
-                  <span class="badge badge-source">${esc(item.priceType)}</span>
+                  <div class="metric-card-value-row">
+                    <div>
+                      <span class="metric-card-value" style="font-size:20px">${fmtNum(item.value, item.decimals)}</span>
+                      <span class="metric-card-unit">${esc(item.unit)}</span>
+                    </div>
+                    <div class="metric-card-change ${item.change >= 0 ? 'pos' : 'neg'}">
+                      ${fmtSigned(item.change, item.decimals)} (${fmtPct(item.pct)})
+                    </div>
+                  </div>
+                  ${renderSparklineSvg(item.spark, item.change >= 0, 32)}
                 </div>
-                <div class="metric-card-value-row">
-                  <div>
-                    <span class="metric-card-value" style="font-size:20px">${fmtNum(item.value, item.decimals)}</span>
-                    <span class="metric-card-unit">${esc(item.unit)}</span>
-                  </div>
-                  <div class="metric-card-change ${item.change >= 0 ? 'pos' : 'neg'}">
-                    ${fmtSigned(item.change, item.decimals)} (${fmtPct(item.pct)})
-                  </div>
-                </div>
-                ${renderSparklineSvg(item.spark, item.change >= 0, 34)}
-              </div>
-            `).join('')}
+              `;
+            }).join('')}
           </div>
         ` : ''}
+
+        <!-- KHUNG BIỂU ĐỒ XEM NHANH TẠI CHỖ (IN-PLACE EXPANDABLE CHART) -->
+        <div class="inplace-chart-panel" id="inplace-chart-panel">
+          <div class="inplace-chart-header">
+            <div class="inplace-chart-title-wrap">
+              <span style="font-size:18px">📈</span>
+              <div>
+                <div class="inplace-chart-title">${esc(activeInst.name)} — Biểu đồ Xu hướng Tại chỗ</div>
+                <div style="font-size:11.5px;color:var(--text-muted);display:flex;align-items:center;gap:8px;margin-top:2px">
+                  <span>Nguồn: <strong>${esc(activeInst.source)}</strong></span>
+                  <span>·</span>
+                  <span>Cập nhật: ${esc(activeInst.marketTime)}</span>
+                  <span>·</span>
+                  <span class="badge ${activeInst.classification === 'Restricted' ? 'badge-restricted' : 'badge-source'}">${esc(activeInst.priceType)}</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="chart-controls-group">
+              <div class="chart-range-pills">
+                ${['1D', '1W', '1M', '3M', '1Y'].map(r => `
+                  <button class="chart-range-btn ${state.overviewChartRange === r ? 'active' : ''}" data-action="set-overview-range" data-range="${r}">${r}</button>
+                `).join('')}
+              </div>
+              <button class="btn btn-outline btn-sm" data-action="nav-market-detail" data-inst-id="${activeInst.id}" style="color:var(--accent-teal);border-color:var(--accent-teal)">
+                Xem chi tiết & So sánh đa trục (Market Data) ↗
+              </button>
+            </div>
+          </div>
+
+          ${canViewActive ? `
+            ${renderCleanChartSvg({
+              series: activeInst.series,
+              name1: activeInst.name,
+              unit1: activeInst.unit,
+              decimals1: activeInst.decimals,
+              range: state.overviewChartRange,
+              color1: '#007A87',
+              height: 220,
+              chartId: 'inplace-overview-chart'
+            })}
+            <div class="inplace-summary-row">
+              <div class="inplace-stat-card">
+                <span class="inplace-stat-label">Giá hiện tại</span>
+                <span class="inplace-stat-val" style="color:var(--accent-teal)">${fmtNum(activeInst.value, activeInst.decimals)} ${esc(activeInst.unit)}</span>
+              </div>
+              <div class="inplace-stat-card">
+                <span class="inplace-stat-label">Giá cao nhất kỳ (${state.overviewChartRange})</span>
+                <span class="inplace-stat-val">${fmtNum(Math.max(...(activeInst.series || []).slice(-30).map(d => d.value)), activeInst.decimals)} ${esc(activeInst.unit)}</span>
+              </div>
+              <div class="inplace-stat-card">
+                <span class="inplace-stat-label">Giá thấp nhất kỳ (${state.overviewChartRange})</span>
+                <span class="inplace-stat-val">${fmtNum(Math.min(...(activeInst.series || []).slice(-30).map(d => d.value)), activeInst.decimals)} ${esc(activeInst.unit)}</span>
+              </div>
+              <div class="inplace-stat-card">
+                <span class="inplace-stat-label">Biến động so với phiên trước</span>
+                <span class="inplace-stat-val ${activeInst.change >= 0 ? 'pos' : 'neg'}" style="color:${activeInst.change >= 0 ? 'var(--pos-green)' : 'var(--neg-red)'}">
+                  ${fmtSigned(activeInst.change, activeInst.decimals)} (${fmtPct(activeInst.pct)})
+                </span>
+              </div>
+            </div>
+          ` : `
+            <div class="metric-card-locked" style="min-height:200px">
+              <div class="locked-icon-wrap">${ico('lock', 22)}</div>
+              <div class="locked-title">${esc(activeInst.name)}</div>
+              <div class="locked-desc">Biểu đồ chỉ số này thuộc phân loại Mật (Restricted). Chuyển sang vai trò Lãnh đạo hoặc Đội MI để xem dữ liệu.</div>
+            </div>
+          `}
+        </div>
       </section>
 
       <!-- TẦNG 2: BẢN TIN TỔNG HỢP NGÀY & COMPONENT AI CHAT NHÚNG -->
@@ -519,113 +672,77 @@
                 </select>
               </div>
 
-              <p style="font-size:13px;line-height:1.6;margin-bottom:12px;color:var(--text-sub)">
-                ${esc(morning.executiveSummary)}
-              </p>
-
-              <div class="digest-prices-grid">
-                ${morning.keyPrices.map(p => `
-                  <div class="digest-price-item">
-                    <span>${esc(p.label)}</span>
-                    <strong>${esc(p.value)} <span class="metric-card-change pos">${esc(p.change)}</span></strong>
-                  </div>
-                `).join('')}
-              </div>
-
-              <p style="font-size:12.5px;line-height:1.55;color:var(--text-muted);margin-bottom:12px">
-                ${esc(morning.driversAnalysis)}
-              </p>
-
-              <div style="border-top:1px dashed var(--border-card);padding-top:10px;display:flex;align-items:center;flex-wrap:wrap">
-                <span style="font-size:11.5px;font-weight:700;color:var(--primary-navy);margin-right:8px">Đoạn nguồn đối chiếu:</span>
-                ${morning.citations.map(c => `
-                  <button class="citation-chip" data-action="open-citation" data-citation-id="${c.id}" title="${esc(c.text)}">
-                    📑 [${esc(c.label)}]
-                  </button>
-                `).join('')}
-              </div>
-            </div>
-
-            <!-- Khối Phụ: Cập nhật Diễn biến Real-time -->
-            <div class="live-pulse-box">
-              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
-                <div style="display:flex;align-items:center;gap:8px">
-                  <span class="badge badge-ai-summary">AI Tổng hợp Real-time</span>
-                  <strong style="font-size:13px;color:#FFFFFF">Cập nhật Diễn biến Real-time trong ngày (AI Live Pulse)</strong>
+              <div class="digest-body">
+                <p>
+                  ${esc(morning.executiveSummary)}
+                </p>
+                <div style="margin: 12px 0; padding: 10px 14px; background: var(--bg-card-subtle); border-radius: 6px; border-left: 3px solid var(--accent-teal);">
+                  <strong style="color:var(--text-main); font-size:12px;">Nhận định chuyên viên MI:</strong>
+                  <span style="font-size:12px; color:var(--text-sub); display:block; margin-top:2px;">${esc(morning.analystNote)}</span>
                 </div>
-                <span style="font-size:11px;color:var(--accent-teal);font-weight:600">● Đang cập nhật</span>
               </div>
-              <div>
-                ${pulse.updates.map(u => `
-                  <div class="pulse-item">
-                    <span class="pulse-time">${esc(u.time)}</span>
-                    <span>${esc(u.content)}</span>
+
+              <!-- Cập nhật Intraday Real-time Pulse -->
+              <div class="pulse-box">
+                <div class="pulse-head">
+                  <div class="pulse-live-indicator">
+                    <span class="pulse-dot"></span>
+                    <span>AI LIVE PULSE — CẬP NHẬT TRONG NGÀY</span>
                   </div>
-                `).join('')}
+                  <span style="font-size:10.5px;color:var(--text-muted)">Cập nhật lúc ${esc(pulse.lastUpdated)}</span>
+                </div>
+                <div style="font-size:12px;color:var(--text-sub);line-height:1.45;margin-bottom:8px">
+                  ${esc(pulse.headline)}
+                </div>
+                <div style="display:flex;align-items:center;justify-content:space-between;font-size:11px">
+                  <span class="badge badge-ai-summary">${esc(pulse.sourceBadge)}</span>
+                  <span style="color:var(--text-muted)">Tác động dự kiến: <strong style="color:var(--pos-green)">${esc(pulse.impact)}</strong></span>
+                </div>
               </div>
             </div>
           </div>
 
-          <!-- Cột phải 5 cột: Component AI Copilot Nhúng -->
+          <!-- Cột phải 5 cột: Embedded Copilot Widget -->
           <div class="col-5">
             <div class="copilot-card">
               <div class="copilot-head">
-                <div class="copilot-title-group">
-                  <div class="copilot-icon">${ico('sparkle', 16)}</div>
-                  <div>
-                    <div class="copilot-title">Trợ lý Thị trường BSR (AI Auker)</div>
-                    <div style="font-size:10px;color:var(--text-muted)">Hỏi đáp dữ liệu & Phân tích tác động</div>
-                  </div>
+                <div class="copilot-brand">
+                  <div class="copilot-icon">${ico('sparkle', 14)}</div>
+                  <span>Trợ lý BSR Copilot</span>
                 </div>
-                <button class="btn btn-sm btn-secondary" data-action="nav-dedicated-ai" style="font-size:11px;font-weight:700;color:#C084FC;border-color:rgba(168,85,247,0.4)">
-                  Mở rộng sang AI Chat ↗
+                <button class="btn btn-outline btn-sm" data-action="nav-page" data-page="assistant" style="font-size:11px">
+                  Mở rộng sang Không gian AI Chat ↗
                 </button>
               </div>
 
-              <div class="copilot-body">
-                <div class="copilot-response-box">
-                  <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px">
-                    <span class="badge badge-ai-summary">Phân tích tức thời</span>
-                    <span style="font-size:10.5px;color:var(--text-muted)">Quyền: ${esc(getRole().label)}</span>
+              <div class="copilot-chat-feed">
+                ${state.copilotResponses.map(r => `
+                  <div class="copilot-msg-user">${esc(r.prompt)}</div>
+                  <div class="copilot-msg-ai">
+                    <div style="display:flex;align-items:center;gap:4px;margin-bottom:4px;font-size:10px;color:var(--text-muted)">
+                      ${ico('sparkle', 10)} <span>Auker AI BSR</span>
+                    </div>
+                    <div style="white-space:pre-line">${esc(r.response)}</div>
                   </div>
-                  <div style="white-space:pre-line;font-size:12.5px;color:#E2E8F0">
-                    ${esc(state.copilotResponses[0].response)}
-                  </div>
-                </div>
-
-                <div>
-                  <div style="font-size:11px;font-weight:700;color:var(--text-muted);margin-bottom:6px;text-transform:uppercase">
-                    Gợi ý phân tích 1 chạm:
-                  </div>
-                  <div class="copilot-chips-wrap">
-                    <button class="copilot-prompt-chip" data-action="trigger-copilot-prompt" data-prompt="Tạo báo cáo nhanh biến động Physical & Crack hôm nay">
-                      <span>⚡ Tạo báo cáo nhanh biến động Physical & Crack hôm nay</span>
-                      ${ico('chevron', 12)}
-                    </button>
-                    <button class="copilot-prompt-chip" data-action="trigger-copilot-prompt" data-prompt="Tổng hợp file Excel vừa tải lên">
-                      <span>📊 Tổng hợp file Excel vừa tải lên</span>
-                      ${ico('chevron', 12)}
-                    </button>
-                    <button class="copilot-prompt-chip" data-action="trigger-copilot-prompt" data-prompt="Đánh giá tác động giá Brent tăng lên biên lợi nhuận lọc dầu">
-                      <span>💡 Đánh giá tác động giá Brent tăng lên biên lợi nhuận</span>
-                      ${ico('chevron', 12)}
-                    </button>
-                  </div>
-                </div>
+                `).join('')}
               </div>
 
-              <div class="copilot-foot">
-                <div class="copilot-input-row">
-                  <input type="text" class="copilot-input" id="copilot-text-input" placeholder="Hỏi AI về giá dầu, crack spread, tồn kho Dung Quất...">
-                  <button class="btn btn-accent btn-sm" data-action="submit-copilot">Gửi</button>
-                </div>
-                <div style="display:flex;align-items:center;justify-content:space-between;margin-top:8px">
-                  <button class="btn btn-sm btn-secondary" data-action="open-drawer" data-drawer-type="excel_upload" style="font-size:10.5px">
-                    📎 Đính kèm file (.xlsx, .pdf)
-                  </button>
-                  <span style="font-size:10px;color:var(--text-muted)">RBAC tự động</span>
-                </div>
+              <div class="copilot-chips-wrap">
+                <button class="copilot-chip" data-action="send-copilot-prompt" data-prompt="Tạo báo cáo nhanh biến động Physical & Crack hôm nay">
+                  📊 Báo cáo biến động Physical & Crack hôm nay
+                </button>
+                <button class="copilot-chip" data-action="send-copilot-prompt" data-prompt="Đánh giá chênh lệch giá Brent Dated vs WTI Futures">
+                  ⚡ Đối chiếu Dated Brent vs WTI
+                </button>
+                <button class="copilot-chip" data-action="send-copilot-prompt" data-prompt="Khuyến nghị điều chỉnh công suất CDU theo Crack Spreads">
+                  🎯 Khuyến nghị công suất CDU
+                </button>
               </div>
+
+              <form class="copilot-input-bar" id="copilot-form" data-action="submit-copilot">
+                <input type="text" placeholder="Hỏi AI về giá, tồn kho, crack spread..." id="copilot-input">
+                <button type="submit" class="btn btn-primary btn-sm" style="padding:4px 8px">Gửi</button>
+              </form>
             </div>
           </div>
         </div>
@@ -633,44 +750,40 @@
 
       <!-- TẦNG 3: TOP 10 TIN TỨC THỊ TRƯỜNG MỚI NHẤT -->
       <section>
-        <div class="card" style="padding:0;overflow:hidden">
-          <div style="padding:16px 20px;border-bottom:1px solid var(--border-card);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px">
+        <div class="news-feed-card">
+          <div class="news-feed-head">
             <div>
-              <h2 style="font-size:15px;font-weight:800;color:#FFFFFF">
-                Top 10 Tin tức Thị trường Mới nhất (Hợp nhất theo dòng thời gian)
-              </h2>
-              <div style="font-size:11.5px;color:var(--text-muted)">
-                Kết hợp liên tục giữa Tin nhập sáng (Platts/Reuters) và Cập nhật phát sinh trong ngày
-              </div>
+              <h2 style="font-size:15px;font-weight:700;color:var(--text-main)">Top 10 Tin tức Thị trường Mới nhất (Hợp nhất theo Thời gian)</h2>
+              <div style="font-size:11.5px;color:var(--text-muted)">Hợp nhất tin nhập sáng từ Platts/Reuters và tin nóng phát sinh trong ngày</div>
             </div>
             <div style="display:flex;align-items:center;gap:10px">
-              <button class="btn btn-sm btn-secondary" data-action="filter-news-feed" data-filter="all">Tất cả (10)</button>
-              <button class="btn btn-sm btn-secondary" data-action="filter-news-feed" data-filter="morning">Từ nguồn nhập sáng</button>
-              <button class="btn btn-sm btn-secondary" data-action="filter-news-feed" data-filter="realtime">Mới phát sinh</button>
-              <button class="btn btn-sm btn-accent" data-action="open-drawer" data-drawer-type="quick_news">
-                + Thêm tin nhanh
+              <div class="filter-tabs-pill">
+                <button class="pill-btn active">Tất cả (10)</button>
+                <button class="pill-btn">Tin nhập sáng</button>
+                <button class="pill-btn">Mới phát sinh</button>
+              </div>
+              <button class="btn btn-outline btn-sm" data-action="open-drawer" data-drawer-type="quick_news">
+                ${ico('plus')} + Thêm tin nhanh
               </button>
             </div>
           </div>
 
-          <div class="news-feed-table">
+          <div>
             ${D.top10News.map(item => `
-              <div class="news-feed-row" data-action="open-news-detail" data-news-id="${item.id}">
-                <div class="news-timeline-col">
-                  <div>${esc(item.time)}</div>
+              <div class="news-item-row" data-action="open-news-detail" data-news-id="${item.id}" style="cursor:pointer">
+                <div style="width:110px;flex-shrink:0">
+                  <div style="font-size:11.5px;font-weight:700;font-family:var(--font-mono);color:var(--text-main)">${esc(item.time)}</div>
                   <span class="badge ${item.originType === 'morning' ? 'badge-source' : 'badge-ai-summary'}" style="margin-top:4px;font-size:9.5px">
                     ${esc(item.originBadge)}
                   </span>
                 </div>
-                <div class="news-content-col">
-                  <div class="news-title-row">
-                    <span class="news-title-text">${esc(item.title)}</span>
+                <div class="news-item-main">
+                  <div class="news-item-title">${esc(item.title)}</div>
+                  <div class="news-item-snippet">${esc(item.summary)}</div>
+                  <div class="news-item-tags">
                     ${item.duplicateBadge ? `<span class="badge badge-manual">${esc(item.duplicateBadge)}</span>` : ''}
                     ${item.topics.map(t => `<span class="badge badge-source" style="font-size:9.5px">${esc(t)}</span>`).join('')}
                     <span style="margin-left:auto;font-size:11px;color:var(--text-muted);font-weight:600">${esc(item.source)}</span>
-                  </div>
-                  <div class="news-summary-text">
-                    ${esc(item.summary)}
                   </div>
                 </div>
               </div>
@@ -680,7 +793,6 @@
       </section>
     `;
   }
-
   /* TRANG 2: DỮ LIỆU THỊ TRƯỜNG CHUYÊN SÂU */
   function renderMarketDataPage() {
     const canRestricted = canSeeRestricted();
@@ -693,7 +805,7 @@
       <section style="margin-bottom:20px">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:12px">
           <div>
-            <h1 style="font-size:18px;font-weight:800;color:#FFFFFF">2. Dữ liệu Thị trường Chuyên sâu</h1>
+            <h1 style="font-size:18px;font-weight:800;color:var(--text-main)">2. Dữ liệu Thị trường Chuyên sâu</h1>
             <div style="font-size:11.5px;color:var(--text-muted)">Biểu đồ chuỗi thời gian đa trục độ phân giải cao, ghim sự kiện và phân tích tương quan</div>
           </div>
           <div style="display:flex;gap:10px">
@@ -731,7 +843,7 @@
             return `
               <div class="card card-priority" style="padding:12px;cursor:pointer;border-color:${isChecked ? '#00E5FF' : 'var(--border-card)'}" data-action="toggle-instrument-pick" data-inst-id="${item.id}">
                 <div style="display:flex;justify-content:space-between;align-items:center">
-                  <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-weight:700;font-size:12px;color:#FFFFFF">
+                  <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-weight:700;font-size:12px;color:var(--text-main)">
                     <input type="checkbox" ${isChecked ? 'checked' : ''} style="accent-color:#00E5FF">
                     ${esc(item.short)}
                   </label>
@@ -752,7 +864,7 @@
       <section class="chart-multiaxis-box">
         <div class="chart-ctrl-row">
           <div>
-            <h2 style="font-size:15px;font-weight:800;color:#FFFFFF">
+            <h2 style="font-size:15px;font-weight:800;color:var(--text-main)">
               Biểu đồ Phân tích Đa trục: <span style="color:#00E5FF">${esc(activeInst.name)}</span> ${compareInst ? ` vs <span style="color:#F59E0B">${esc(compareInst.name)}</span>` : ''}
             </h2>
             <div style="font-size:11px;color:var(--text-muted)">
@@ -779,7 +891,7 @@
       <!-- 2.3 BẢNG DỮ LIỆU LỊCH SỬ -->
       <section class="card" style="padding:0;overflow:hidden">
         <div style="padding:14px 20px;border-bottom:1px solid var(--border-card);display:flex;align-items:center;justify-content:space-between">
-          <strong style="font-size:14px;color:#FFFFFF">Bảng Số liệu Lịch sử & Nguồn gốc (Provenance Ledger)</strong>
+          <strong style="font-size:14px;color:var(--text-main)">Bảng Số liệu Lịch sử & Nguồn gốc (Provenance Ledger)</strong>
           <span style="font-size:11px;color:var(--text-muted)">Cập nhật lần cuối: 14/11/2026 · 09:30 ICT</span>
         </div>
         <table class="data-table-bsr">
@@ -835,7 +947,7 @@
     return `
       <div style="margin-bottom:20px;display:flex;justify-content:space-between;align-items:center">
         <div>
-          <h1 style="font-size:18px;font-weight:800;color:#FFFFFF">3. Báo cáo & Bản tin Video</h1>
+          <h1 style="font-size:18px;font-weight:800;color:var(--text-main)">3. Báo cáo & Bản tin Video</h1>
           <div style="font-size:11.5px;color:var(--text-muted)">Phát sóng điều hành lãnh đạo và kho lưu trữ báo cáo định kỳ / đột xuất</div>
         </div>
         <div style="display:flex;gap:10px">
@@ -876,7 +988,7 @@
             </div>
           </div>
           <div style="margin-top:10px">
-            <h2 style="font-size:14.5px;font-weight:700;color:#FFFFFF">${esc(video.title)}</h2>
+            <h2 style="font-size:14.5px;font-weight:700;color:var(--text-main)">${esc(video.title)}</h2>
             <div style="font-size:11.5px;color:var(--text-muted)">Người trình bày: ${esc(video.presenter)}</div>
           </div>
         </div>
@@ -890,7 +1002,7 @@
               <div class="chapter-item ${state.activeChapter === idx ? 'active' : ''}" data-action="seek-video-chapter" data-chapter-idx="${idx}">
                 <div style="display:flex;align-items:center;margin-bottom:2px">
                   <span class="chapter-time">${esc(ch.time)}</span>
-                  <strong style="font-size:12.5px;color:#FFFFFF">${esc(ch.title)}</strong>
+                  <strong style="font-size:12.5px;color:var(--text-main)">${esc(ch.title)}</strong>
                 </div>
                 <div style="font-size:11.5px;color:var(--text-muted)">${esc(ch.desc)}</div>
               </div>
@@ -966,7 +1078,7 @@
     return `
       <div style="margin-bottom:20px;display:flex;justify-content:space-between;align-items:center">
         <div>
-          <h1 style="font-size:18px;font-weight:800;color:#FFFFFF">4. Đánh giá Dự báo & Khuyến nghị Chuyên sâu</h1>
+          <h1 style="font-size:18px;font-weight:800;color:var(--text-main)">4. Đánh giá Dự báo & Khuyến nghị Chuyên sâu</h1>
           <div style="font-size:11.5px;color:var(--text-muted)">Đo lường độ chính xác baseline từ các nguồn thương mại và đưa ra khuyến nghị hành động từ AI</div>
         </div>
         <div style="display:flex;gap:10px">
@@ -1009,7 +1121,7 @@
       <section class="chart-multiaxis-box">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
           <div>
-            <h2 style="font-size:14.5px;font-weight:800;color:#FFFFFF">Biểu đồ Đối chiếu: Giá Thực tế vs Baseline các Tổ chức (Brent Dated)</h2>
+            <h2 style="font-size:14.5px;font-weight:800;color:var(--text-main)">Biểu đồ Đối chiếu: Giá Thực tế vs Baseline các Tổ chức (Brent Dated)</h2>
             <div style="font-size:11px;color:var(--text-muted)">So sánh đường Thực tế (Cyan neon) với đường Baseline của Platts, McKinsey, EIA, BSR Model</div>
           </div>
           <div style="display:flex;gap:12px;font-size:11px">
@@ -1023,7 +1135,7 @@
       <!-- Bảng đối soát sai số -->
       <section class="card" style="padding:0;overflow:hidden;margin-bottom:28px">
         <div style="padding:14px 20px;border-bottom:1px solid var(--border-card);display:flex;justify-content:space-between;align-items:center">
-          <strong style="font-size:14px;color:#FFFFFF">Bảng Chi tiết Đối soát Sai số Dự báo Baseline từng Kỳ</strong>
+          <strong style="font-size:14px;color:var(--text-main)">Bảng Chi tiết Đối soát Sai số Dự báo Baseline từng Kỳ</strong>
           <span style="font-size:11px;color:var(--text-muted)">Version History preserved</span>
         </div>
         <table class="data-table-bsr">
@@ -1068,7 +1180,7 @@
       <section>
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:12px">
           <div>
-            <h2 style="font-size:16px;font-weight:800;color:#FFFFFF">
+            <h2 style="font-size:16px;font-weight:800;color:var(--text-main)">
               Khuyến nghị Hành động Chuyên sâu từ AI (AI Market Recommendations)
             </h2>
             <div style="font-size:11.5px;color:var(--text-muted)">
@@ -1093,7 +1205,7 @@
                     <span class="badge badge-success">Độ tin cậy: ${esc(rec.confidence)}</span>
                     <span style="font-size:11px;color:var(--text-muted)">Tạo: ${esc(rec.created)} (${esc(rec.version)})</span>
                   </div>
-                  <h3 style="font-size:15px;font-weight:800;color:#FFFFFF">${esc(rec.title)}</h3>
+                  <h3 style="font-size:15px;font-weight:800;color:var(--text-main)">${esc(rec.title)}</h3>
                 </div>
                 <div style="display:flex;gap:8px">
                   <button class="btn btn-sm btn-secondary" data-action="rec-feedback" data-rec-id="${rec.id}">
@@ -1112,7 +1224,7 @@
 
               <div class="rec-section-block">
                 <div class="rec-section-title">2. Lập luận định lượng & Tác động số liệu:</div>
-                <div style="color:#FFFFFF;font-weight:600">${esc(rec.rationale)}</div>
+                <div style="color:var(--text-main);font-weight:600">${esc(rec.rationale)}</div>
               </div>
 
               <div class="rec-section-block">
@@ -1136,7 +1248,7 @@
     return `
       <div style="margin-bottom:20px;display:flex;justify-content:space-between;align-items:center">
         <div>
-          <h1 style="font-size:18px;font-weight:800;color:#FFFFFF">5. Nhập liệu & Luồng Tin tức Thị trường</h1>
+          <h1 style="font-size:18px;font-weight:800;color:var(--text-main)">5. Nhập liệu & Luồng Tin tức Thị trường</h1>
           <div style="font-size:11.5px;color:var(--text-muted)">Giao diện chia đôi màn hình: Vừa nhập dữ liệu/file vừa đối chiếu luồng tin tức mà không mất góc nhìn</div>
         </div>
         <span class="badge badge-source">Quyền thao tác: Đội Market Intelligence</span>
@@ -1209,7 +1321,7 @@
             <div>
               <div class="upload-dropzone" data-action="trigger-file-select">
                 <div style="font-size:28px;margin-bottom:8px">📂</div>
-                <strong style="font-size:13px;color:#FFFFFF">Kéo thả file vào đây hoặc bấm để chọn</strong>
+                <strong style="font-size:13px;color:var(--text-main)">Kéo thả file vào đây hoặc bấm để chọn</strong>
                 <div style="font-size:11px;color:var(--text-muted);margin-top:4px">Hỗ trợ PDF, Excel (.xlsx, .csv), Word (.docx) — Tối đa 15MB</div>
               </div>
 
@@ -1264,7 +1376,7 @@
         <div class="card" style="padding:0;overflow:hidden">
           <div style="padding:14px 20px;border-bottom:1px solid var(--border-card);display:flex;justify-content:space-between;align-items:center">
             <div>
-              <strong style="font-size:14px;color:#FFFFFF">Luồng Tin tức Đầy đủ & Kiểm duyệt MI (Review Queue)</strong>
+              <strong style="font-size:14px;color:var(--text-main)">Luồng Tin tức Đầy đủ & Kiểm duyệt MI (Review Queue)</strong>
               <div style="font-size:11px;color:var(--text-muted)">Phân tách rõ [Nguồn gốc], [AI Tóm tắt], [AI Nhận định]</div>
             </div>
             <span class="badge badge-ai-summary">Tự động gắn thẻ AI</span>
@@ -1284,7 +1396,7 @@
                   </div>
                 </div>
 
-                <h4 style="font-size:13.5px;font-weight:700;color:#FFFFFF;margin-bottom:6px">${esc(n.title)}</h4>
+                <h4 style="font-size:13.5px;font-weight:700;color:var(--text-main);margin-bottom:6px">${esc(n.title)}</h4>
 
                 <div style="display:flex;flex-direction:column;gap:6px;font-size:12px;margin:8px 0">
                   <div style="background:rgba(59,130,246,0.12);padding:6px 10px;border-radius:4px;border-left:3px solid #3B82F6">
@@ -1319,7 +1431,7 @@
     return `
       <div style="margin-bottom:20px;display:flex;justify-content:space-between;align-items:center">
         <div>
-          <h1 style="font-size:18px;font-weight:800;color:#FFFFFF">6. Đánh giá Chất lượng & Độ chính xác Nguồn tin</h1>
+          <h1 style="font-size:18px;font-weight:800;color:var(--text-main)">6. Đánh giá Chất lượng & Độ chính xác Nguồn tin</h1>
           <div style="font-size:11.5px;color:var(--text-muted)">Đo lường độ chính xác, tỷ lệ tin độc quyền, tốc độ đưa tin và hiệu quả đầu tư (ROI) nguồn tin</div>
         </div>
         <div class="filter-tabs-pill">
@@ -1355,7 +1467,7 @@
 
       <section class="card" style="padding:0;overflow:hidden;margin-bottom:24px">
         <div style="padding:14px 20px;border-bottom:1px solid var(--border-card);display:flex;justify-content:space-between;align-items:center">
-          <strong style="font-size:14px;color:#FFFFFF">Bảng Xếp hạng & Đánh giá Hiệu quả Nguồn tin (Source Scorecard)</strong>
+          <strong style="font-size:14px;color:var(--text-main)">Bảng Xếp hạng & Đánh giá Hiệu quả Nguồn tin (Source Scorecard)</strong>
           <span style="font-size:11px;color:var(--text-muted)">Đánh giá khả năng thay thế nguồn đắt tiền bằng nguồn tối ưu hơn</span>
         </div>
         <table class="data-table-bsr">
@@ -1395,7 +1507,7 @@
       <section class="chart-multiaxis-box">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
           <div>
-            <h2 style="font-size:14.5px;font-weight:800;color:#FFFFFF">Biểu đồ Xu hướng Độ chính xác qua các Tháng: Platts vs Argus vs Reuters</h2>
+            <h2 style="font-size:14.5px;font-weight:800;color:var(--text-main)">Biểu đồ Xu hướng Độ chính xác qua các Tháng: Platts vs Argus vs Reuters</h2>
             <div style="font-size:11px;color:var(--text-muted)">Theo dõi diễn biến điểm Accuracy và mức độ cải thiện thông tin độc quyền</div>
           </div>
           <div style="display:flex;gap:12px;font-size:11px">
@@ -1409,7 +1521,7 @@
 
       <section class="card" style="padding:0;overflow:hidden">
         <div style="padding:14px 20px;border-bottom:1px solid var(--border-card);display:flex;justify-content:space-between;align-items:center">
-          <strong style="font-size:14px;color:#FFFFFF">Nhật ký Kiểm chứng Dữ liệu User Nhập (Verification Log)</strong>
+          <strong style="font-size:14px;color:var(--text-main)">Nhật ký Kiểm chứng Dữ liệu User Nhập (Verification Log)</strong>
           <span style="font-size:11px;color:var(--text-muted)">Bấm "Verify" để cập nhật kết quả và cộng dồn điểm Accuracy của nguồn tin</span>
         </div>
         <table class="data-table-bsr">
@@ -1459,7 +1571,7 @@
     return `
       <div style="margin-bottom:20px;display:flex;justify-content:space-between;align-items:center">
         <div>
-          <h1 style="font-size:18px;font-weight:800;color:#FFFFFF">7. Quản trị Hệ thống (System Administration)</h1>
+          <h1 style="font-size:18px;font-weight:800;color:var(--text-main)">7. Quản trị Hệ thống (System Administration)</h1>
           <div style="font-size:11.5px;color:var(--text-muted)">Vận hành nguồn dữ liệu, công thức Crack Spread, phân quyền người dùng và giám sát AI Auker</div>
         </div>
         <span class="badge badge-restricted">Quyền: Quản trị viên (Admin / MI)</span>
@@ -1486,7 +1598,7 @@
       ${state.adminTab === 'sources' ? `
         <div class="card" style="padding:0;overflow:hidden">
           <div style="padding:16px 20px;border-bottom:1px solid var(--border-card);display:flex;justify-content:space-between;align-items:center">
-            <strong style="font-size:14px;color:#FFFFFF">Danh sách Nguồn Dữ liệu Thương mại & Kết nối Nội bộ</strong>
+            <strong style="font-size:14px;color:var(--text-main)">Danh sách Nguồn Dữ liệu Thương mại & Kết nối Nội bộ</strong>
             <button class="btn btn-sm btn-primary" data-action="sync-all-sources">Đồng bộ tất cả ngay (Sync All)</button>
           </div>
           <table class="data-table-bsr">
@@ -1528,7 +1640,7 @@
         <div class="card" style="padding:0;overflow:hidden">
           <div style="padding:16px 20px;border-bottom:1px solid var(--border-card);display:flex;justify-content:space-between;align-items:center">
             <div>
-              <strong style="font-size:14px;color:#FFFFFF">Danh mục Công thức Tính Crack Spread Chuẩn BSR</strong>
+              <strong style="font-size:14px;color:var(--text-main)">Danh mục Công thức Tính Crack Spread Chuẩn BSR</strong>
               <div style="font-size:11px;color:var(--text-muted)">Không ghi đè công thức lịch sử để bảo đảm tính tái lập của các báo cáo cũ</div>
             </div>
             <button class="btn btn-sm btn-primary" data-action="create-new-formula">+ Tạo phiên bản công thức mới</button>
@@ -1595,7 +1707,7 @@
 
           <div class="card" style="padding:0;overflow:hidden">
             <div style="padding:14px 20px;border-bottom:1px solid var(--border-card);display:flex;justify-content:space-between;align-items:center">
-              <strong style="font-size:14px;color:#FFFFFF">Ma trận Phân quyền Vai trò & Kiểm soát Dữ liệu Mật</strong>
+              <strong style="font-size:14px;color:var(--text-main)">Ma trận Phân quyền Vai trò & Kiểm soát Dữ liệu Mật</strong>
               <span class="badge badge-restricted">RBAC Row-level Security</span>
             </div>
             <table class="data-table-bsr">
@@ -1632,7 +1744,7 @@
         <div class="card" style="padding:0;overflow:hidden">
           <div style="padding:16px 20px;border-bottom:1px solid var(--border-card);display:flex;justify-content:space-between;align-items:center">
             <div>
-              <strong style="font-size:14px;color:#FFFFFF">Nhật ký Kiểm toán Hoạt động Hệ thống (Audit Log Viewer)</strong>
+              <strong style="font-size:14px;color:var(--text-main)">Nhật ký Kiểm toán Hoạt động Hệ thống (Audit Log Viewer)</strong>
               <div style="font-size:11px;color:var(--text-muted)">Lưu vết không thể tẩy xóa mọi hành vi truy cập dữ liệu mật và xuất báo cáo</div>
             </div>
             <button class="btn btn-sm btn-secondary" data-action="export-audit-log">
@@ -1695,7 +1807,7 @@
 
           <div class="card" style="padding:0;overflow:hidden">
             <div style="padding:14px 20px;border-bottom:1px solid var(--border-card);display:flex;justify-content:space-between;align-items:center">
-              <strong style="font-size:14px;color:#FFFFFF">Hiệu năng Điều phối AI theo Từng Tác vụ (Task Breakdown)</strong>
+              <strong style="font-size:14px;color:var(--text-main)">Hiệu năng Điều phối AI theo Từng Tác vụ (Task Breakdown)</strong>
               <span class="badge badge-ai-summary">Auker Orchestration Layer</span>
             </div>
             <table class="data-table-bsr">
@@ -1737,7 +1849,7 @@
             ${ico('arrowBack')} Quay lại màn hình trước
           </button>
           <div>
-            <h1 style="font-size:16.5px;font-weight:800;color:#FFFFFF">
+            <h1 style="font-size:16.5px;font-weight:800;color:var(--text-main)">
               Không gian Trợ lý AI Thị trường & Report Studio (3 Cột Chuyên biệt)
             </h1>
           </div>
@@ -1760,7 +1872,7 @@
             <div style="font-size:10px;font-weight:700;color:var(--text-muted);text-transform:uppercase">Lịch sử hội thoại:</div>
             ${D.aiConversations.map(c => `
               <div class="chapter-item ${c.id === state.aiActiveThreadId ? 'active' : ''}" data-action="select-ai-thread" data-thread-id="${c.id}" style="padding:8px 10px">
-                <strong style="font-size:11.5px;color:#FFFFFF;display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">
+                <strong style="font-size:11.5px;color:var(--text-main);display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">
                   ${esc(c.title)}
                 </strong>
                 <span style="font-size:10px;color:var(--text-muted)">${esc(c.updated)}</span>
@@ -1783,7 +1895,7 @@
         <div class="ai-chat-stream-panel">
           <div style="padding:14px 18px;border-bottom:1px solid var(--border-card);display:flex;justify-content:space-between;align-items:center">
             <div>
-              <strong style="font-size:13.5px;color:#FFFFFF">${esc(thread.title)}</strong>
+              <strong style="font-size:13.5px;color:var(--text-main)">${esc(thread.title)}</strong>
               <div style="font-size:10.5px;color:var(--text-muted)">Phiên bảo mật: ${esc(thread.classification)}</div>
             </div>
             <span class="badge badge-success">Sẵn sàng phản hồi</span>
@@ -1837,11 +1949,30 @@
                 📎 Đính kèm file (Excel/PDF)
               </button>
             </div>
-            <div style="display:flex;gap:10px">
-              <textarea class="form-control-textarea" id="chat-input-textarea" rows="2" placeholder="Gõ yêu cầu phân tích dữ liệu hoặc làm báo cáo đột xuất..."></textarea>
-              <button class="btn btn-accent" style="align-self:flex-end;padding:12px 20px" data-action="submit-chat-message">
-                Gửi
-              </button>
+            <div class="ai-chat-input-box" style="border:1.5px solid var(--border-strong);border-radius:12px;background:var(--bg-card);padding:14px;box-shadow:var(--shadow-card)">
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+                <div style="display:flex;align-items:center;gap:10px">
+                  <span style="font-size:11px;font-weight:700;color:var(--text-muted)">MỨC BẢO MẬT:</span>
+                  <select class="form-control-select" style="font-size:11.5px;padding:4px 10px;width:auto">
+                    <option value="Restricted" selected>Mật (Restricted - Physical) 🔒</option>
+                    <option value="Internal">Nội bộ (Internal)</option>
+                  </select>
+                </div>
+                <button class="btn btn-sm btn-secondary" style="font-size:11.5px" data-action="attach-chat-files">
+                  📎 Đính kèm file (Excel/PDF)
+                </button>
+              </div>
+
+              <textarea class="form-control-textarea" id="chat-input-textarea" rows="2" placeholder="Gõ yêu cầu phân tích dữ liệu thị trường hoặc tạo báo cáo đột xuất (Nhấn Enter để gửi)..." style="width:100%;border:none;background:transparent;outline:none;font-size:13.5px;resize:none;min-height:50px;color:var(--text-main);padding:0"></textarea>
+
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-top:10px;padding-top:10px;border-top:1px solid var(--border-card)">
+                <span style="font-size:11px;color:var(--text-muted)">
+                  💡 Nhấn <strong style="color:var(--text-main)">Enter</strong> để gửi, <strong style="color:var(--text-main)">Shift+Enter</strong> để xuống dòng
+                </span>
+                <button class="btn btn-primary" data-action="submit-chat-message" id="btn-submit-chat" style="padding:8px 20px;font-size:12.5px;font-weight:700;border-radius:8px">
+                  <span>Gửi câu hỏi</span> ${ico('sparkle', 14)}
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -1849,7 +1980,7 @@
         <!-- CỘT 3 (380px) -->
         <div class="ai-preview-panel">
           <div style="padding:14px 16px;border-bottom:1px solid var(--border-card);display:flex;justify-content:space-between;align-items:center">
-            <strong style="font-size:13px;color:#FFFFFF">Khung Xem trước Báo cáo (Live Artifact)</strong>
+            <strong style="font-size:13px;color:var(--text-main)">Khung Xem trước Báo cáo (Live Artifact)</strong>
             <span class="badge badge-restricted">Mật - Restricted</span>
           </div>
 
@@ -1862,7 +1993,7 @@
               <span class="badge badge-source">BC-2026-042</span>
             </div>
 
-            <h3 style="font-size:14px;font-weight:800;color:#FFFFFF;margin-bottom:10px;text-align:center">
+            <h3 style="font-size:14px;font-weight:800;color:var(--text-main);margin-bottom:10px;text-align:center">
               BÁO CÁO ĐỘT XUẤT: BIẾN ĐỘNG GIÁ DẦU PHYSICAL & CRACK SPREAD
             </h3>
             <div style="font-size:10.5px;color:var(--text-muted);text-align:center;margin-bottom:14px">
@@ -1963,7 +2094,7 @@
       body = `
         <div class="upload-dropzone">
           <div style="font-size:24px;margin-bottom:6px">📊</div>
-          <strong style="color:#FFFFFF">Kéo thả file Excel (.xlsx, .csv) vào đây</strong>
+          <strong style="color:var(--text-main)">Kéo thả file Excel (.xlsx, .csv) vào đây</strong>
           <div style="font-size:11px;color:var(--text-muted);margin-top:4px">Hệ thống sẽ tự động đối soát cột chỉ số và phân loại bảo mật</div>
         </div>
       `;
@@ -1975,7 +2106,7 @@
           <span class="badge badge-source">${esc(n.source)}</span>
           <span style="font-size:11px;color:var(--text-muted);margin-left:6px">${esc(n.time)}</span>
         </div>
-        <h3 style="font-size:15px;font-weight:800;color:#FFFFFF;margin-bottom:12px">${esc(n.title)}</h3>
+        <h3 style="font-size:15px;font-weight:800;color:var(--text-main);margin-bottom:12px">${esc(n.title)}</h3>
         
         <div style="font-size:12.5px;line-height:1.6;margin-bottom:14px;color:var(--text-sub)">
           ${esc(n.summary)}
@@ -2013,7 +2144,7 @@
     if (state.modalType === 'crack_formula') {
       content = `
         <div style="padding:20px;border-bottom:1px solid var(--border-card);display:flex;justify-content:space-between;align-items:center">
-          <strong style="font-size:15px;color:#FFFFFF">Công thức Chuẩn Tính Crack Spread của BSR</strong>
+          <strong style="font-size:15px;color:var(--text-main)">Công thức Chuẩn Tính Crack Spread của BSR</strong>
           <button class="topbar-icon-btn" data-action="close-modal">${ico('close')}</button>
         </div>
         <div style="padding:20px;font-size:13px;line-height:1.6;color:var(--text-sub)">
@@ -2065,7 +2196,7 @@
         pageHtml = role.admin ? renderAdminPage() : `
           <div class="card" style="text-align:center;padding:40px;margin-top:40px">
             <div style="font-size:32px;margin-bottom:10px">🔒</div>
-            <h2 style="font-size:16px;color:#FFFFFF">Từ chối truy cập</h2>
+            <h2 style="font-size:16px;color:var(--text-main)">Từ chối truy cập</h2>
             <p style="font-size:12.5px;color:var(--text-muted);margin:8px 0 16px">Vai trò hiện tại (${esc(role.label)}) không có quyền quản trị hệ thống.</p>
             <button class="btn btn-primary" data-action="nav-page" data-page="overview">Quay lại Tổng quan</button>
           </div>
@@ -2143,6 +2274,9 @@
             </div>
 
             <div class="topbar-right">
+              <button class="theme-toggle-btn" data-action="toggle-theme" title="Chuyển đổi giao diện Sáng / Tối">
+                ${state.theme === 'dark' ? '🌙 Chế độ Tối' : '☀️ Giao diện Sáng BSR'}
+              </button>
               <div class="role-switcher-wrap">
                 <span class="role-switcher-label">Vai trò:</span>
                 <select class="role-switcher-select" id="role-switcher-select">
@@ -2278,6 +2412,34 @@
           state.selectedInstruments = [instId, state.selectedInstruments[0]].filter(Boolean);
         }
         window.location.hash = 'market-data';
+        render();
+        break;
+      }
+
+      case 'select-overview-instrument': {
+        const instId = target.getAttribute('data-inst-id');
+        if (instId) {
+          state.activeOverviewInstrument = instId;
+          render();
+          const panel = document.getElementById('inplace-chart-panel');
+          if (panel) panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+        break;
+      }
+
+      case 'set-overview-range': {
+        const r = target.getAttribute('data-range');
+        if (r) {
+          state.overviewChartRange = r;
+          render();
+        }
+        break;
+      }
+
+      case 'toggle-theme': {
+        state.theme = state.theme === 'dark' ? 'light' : 'dark';
+        localStorage.setItem('bsr_theme', state.theme);
+        document.documentElement.setAttribute('data-theme', state.theme);
         render();
         break;
       }
@@ -2498,5 +2660,6 @@
   if (initialHash) {
     state.route = initialHash;
   }
+  document.documentElement.setAttribute("data-theme", state.theme);
   render();
 })();

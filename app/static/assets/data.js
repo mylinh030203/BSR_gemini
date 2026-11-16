@@ -8,14 +8,30 @@
 
   function series(base, drift, vol, seed, n) {
     const out = [];
-    let value = base;
-    for (let i = n - 1; i >= 0; i--) {
-      const t = (n - i) / n;
-      const noise = Math.sin((i + seed) * 1.31) * vol + Math.cos((i + seed * 2.1) * 0.43) * vol * 0.55;
-      value = base * (1 - drift * t) + noise + Math.sin(i * 0.11 + seed) * base * 0.012;
-      out.push({ date: new Date(end.getTime() - i * DAY), value: Math.round(value * 100) / 100 });
+    let s = (Math.abs(seed) * 16807 + 1013904223) % 2147483647;
+    function rnd() {
+      s = (s * 16807) % 2147483647;
+      return (s - 1) / 2147483646;
     }
-    out[out.length - 1].value = base;
+
+    const values = new Array(n);
+    values[n - 1] = base;
+    let cur = base;
+    for (let i = n - 2; i >= 0; i--) {
+      const progress = i / n;
+      // Macro trend wave (1-2 smooth natural market swings across the period)
+      const macro = Math.sin(progress * Math.PI * 1.6 + seed * 0.7) * (vol * 1.4);
+      // Realistic random-walk price step with drift
+      const step = (rnd() - 0.485) * (vol * 0.42) - (drift * base * 0.0025);
+      cur -= step;
+      values[i] = cur + macro * 0.12;
+    }
+
+    const offset = base - values[n - 1];
+    for (let i = 0; i < n; i++) {
+      const v = Math.round((values[i] + offset * (i / (n - 1 || 1))) * 100) / 100;
+      out.push({ date: new Date(end.getTime() - (n - 1 - i) * DAY), value: v });
+    }
     return out;
   }
 
