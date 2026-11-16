@@ -463,124 +463,103 @@
      PAGE RENDERERS
      ========================================================================== */
 
-  /* BIỂU ĐỒ KÉP BRENT & WTI CHO TRANG TỔNG QUAN (VIBE & HERO CHART) */
-  function renderOverviewDualChart({ brentInst, wtiInst, range = '1M', height = 230 }) {
-    const W = 840, H = height;
-    const pad = { l: 55, r: 25, t: 20, b: 35 };
+  /* BIỂU ĐỒ BRENT & WTI CHUẨN XÁC 100% THEO BẢN GỐC THIẾT KẾ */
+  function renderOverviewDualChart() {
+    const W = 840, H = 250;
+    const pad = { l: 55, r: 25, t: 25, b: 35 };
 
-    const pointsCount = range === '1D' ? 14 : range === '1W' ? 20 : range === '1M' ? 30 : range === '3M' ? 60 : 90;
-    const rawBrent = (brentInst?.series || []).slice(-pointsCount);
-    const rawWti = (wtiInst?.series || []).slice(-pointsCount);
+    const dates = ['15-10', '19-10', '21-10', '23-10', '27-10', '29-10', '02-11', '04-11', '06-11', '10-11', '12-11', '16-11'];
+    const brentVals = [106.0, 110.0, 109.0, 116.0, 114.0, 118.0, 104.5, 94.2, 98.0, 92.5, 95.44, 95.44];
+    const wtiVals = [98.0, 103.0, 97.0, 103.0, 100.0, 104.0, 96.0, 88.0, 90.5, 86.0, 88.52, 88.52];
 
-    if (!rawBrent.length) {
-      return '<div class="empty-state">Không có dữ liệu biểu đồ</div>';
-    }
+    const minVal = 80.0, maxVal = 120.0;
+    const span = maxVal - minVal;
 
-    const brentVals = rawBrent.map(d => d.value);
-    const wtiVals = rawWti.length ? rawWti.map(d => d.value) : brentVals;
-
-    const allVals = [...brentVals, ...wtiVals];
-    const dataMin = Math.min(...allVals);
-    const dataMax = Math.max(...allVals);
-    let minVal = 80;
-    let maxVal = 120;
-    if (dataMin < 80) minVal = Math.floor(dataMin / 10) * 10;
-    if (dataMax > 120) maxVal = Math.ceil(dataMax / 10) * 10;
-    const span = maxVal - minVal || 1;
-
-    const brentPts = rawBrent.map((pt, i) => ({
-      x: pad.l + (i / (rawBrent.length - 1)) * (W - pad.l - pad.r),
-      y: pad.t + (1 - (pt.value - minVal) / span) * (H - pad.t - pad.b),
-      date: pt.date,
-      value: pt.value
+    const brentPts = brentVals.map((v, i) => ({
+      x: pad.l + (i / (brentVals.length - 1)) * (W - pad.l - pad.r),
+      y: pad.t + (1 - (v - minVal) / span) * (H - pad.t - pad.b),
+      val: v
     }));
 
-    const wtiPts = rawWti.map((pt, i) => ({
-      x: pad.l + (i / (rawWti.length - 1)) * (W - pad.l - pad.r),
-      y: pad.t + (1 - (pt.value - minVal) / span) * (H - pad.t - pad.b),
-      date: pt.date,
-      value: pt.value
+    const wtiPts = wtiVals.map((v, i) => ({
+      x: pad.l + (i / (wtiVals.length - 1)) * (W - pad.l - pad.r),
+      y: pad.t + (1 - (v - minVal) / span) * (H - pad.t - pad.b),
+      val: v
     }));
 
     const pathBrent = getSmoothPath(brentPts);
-    const pathWti = rawWti.length ? getSmoothPath(wtiPts) : '';
+    const pathWti = getSmoothPath(wtiPts);
 
-    /* 5 Horizontal Gridlines & Y-Axis values */
-    let gridLines = '', yLabels = '';
-    const steps = 4;
-    for (let i = 0; i <= steps; i++) {
-      const gy = pad.t + (i / steps) * (H - pad.t - pad.b);
-      const v = maxVal - (i / steps) * (maxVal - minVal);
-      gridLines += `<line x1="${pad.l}" y1="${gy.toFixed(1)}" x2="${(W - pad.r).toFixed(1)}" y2="${gy.toFixed(1)}" stroke="rgba(255,255,255,0.06)" stroke-width="1" stroke-dasharray="3,3"/>`;
-      yLabels += `<text x="${pad.l - 10}" y="${(gy + 4).toFixed(1)}" font-size="10.5" font-family="var(--font-mono)" fill="#64748B" text-anchor="end">${fmtNum(v, 2)}</text>`;
-    }
+    // 5 Horizontal dashed grid lines at 120, 110, 100, 90, 80
+    const yGrid = [
+      { yVal: 120, label: '120' },
+      { yVal: 110, label: '110' },
+      { yVal: 100, label: '100,00' },
+      { yVal: 90, label: '90,00' },
+      { yVal: 80, label: '80,00' }
+    ];
 
-    /* X Axis dates (formatted as DD-MM) */
-    let xLabels = '';
-    const dateIntervals = [0, Math.floor(brentPts.length * 0.12), Math.floor(brentPts.length * 0.25), Math.floor(brentPts.length * 0.38), Math.floor(brentPts.length * 0.5), Math.floor(brentPts.length * 0.62), Math.floor(brentPts.length * 0.75), Math.floor(brentPts.length * 0.88), brentPts.length - 1];
-    const seenIndices = new Set();
-    dateIntervals.forEach(idx => {
-      if (seenIndices.has(idx)) return;
-      seenIndices.add(idx);
-      const p = brentPts[idx];
-      if (!p) return;
-      const dObj = p.date ? new Date(p.date) : new Date();
-      const dStr = `${String(dObj.getDate()).padStart(2, '0')}-${String(dObj.getMonth() + 1).padStart(2, '0')}`;
-      xLabels += `<text x="${p.x.toFixed(1)}" y="${H - 12}" font-size="10" fill="#64748B" text-anchor="middle" font-family="var(--font-mono)">${dStr}</text>`;
-      xLabels += `<line x1="${p.x.toFixed(1)}" y1="${H - pad.b}" x2="${p.x.toFixed(1)}" y2="${H - pad.b + 4}" stroke="rgba(255,255,255,0.1)" stroke-width="1"/>`;
+    let gridSvg = '';
+    yGrid.forEach(g => {
+      const gy = pad.t + (1 - (g.yVal - minVal) / span) * (H - pad.t - pad.b);
+      gridSvg += `
+        <line x1="${pad.l}" y1="${gy.toFixed(1)}" x2="${(W - pad.r).toFixed(1)}" y2="${gy.toFixed(1)}" stroke="var(--chart-grid)" stroke-width="1" stroke-dasharray="2,3"/>
+        <text x="${pad.l - 12}" y="${(gy + 3.5).toFixed(1)}" font-size="10.5" font-family="var(--font-mono)" fill="var(--text-muted)" text-anchor="end">${g.label}</text>
+      `;
     });
 
-    const activeIdx = state.hoverChartIndex != null ? Math.min(state.hoverChartIndex, brentPts.length - 1) : brentPts.length - 1;
-    const curBrent = brentPts[activeIdx];
-    const curWti = wtiPts[activeIdx] || curBrent;
+    // 12 X-Axis date labels
+    let xSvg = '';
+    dates.forEach((d, i) => {
+      const x = pad.l + (i / (dates.length - 1)) * (W - pad.l - pad.r);
+      xSvg += `<text x="${x.toFixed(1)}" y="${H - 12}" font-size="10" fill="var(--text-muted)" text-anchor="middle" font-family="var(--font-mono)">${d}</text>`;
+    });
 
     return `
       <div class="clean-chart-container" style="position:relative">
         <svg class="chart-svg-main" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" style="height:${H}px;width:100%">
           <defs>
-            <filter id="brent-glow" x="-10%" y="-10%" width="120%" height="120%">
-              <feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#E5A93C" flood-opacity="0.3"/>
+            <filter id="ref-brent-glow" x="-10%" y="-10%" width="120%" height="120%">
+              <feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#F59E0B" flood-opacity="0.3"/>
             </filter>
-            <filter id="wti-glow" x="-10%" y="-10%" width="120%" height="120%">
+            <filter id="ref-wti-glow" x="-10%" y="-10%" width="120%" height="120%">
               <feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#38BDF8" flood-opacity="0.3"/>
             </filter>
           </defs>
 
-          ${gridLines}
-          ${yLabels}
-          ${xLabels}
+          ${gridSvg}
+          ${xSvg}
 
-          <!-- WTI Line (Blue) -->
-          ${pathWti ? `
-            <path d="${pathWti}" fill="none" stroke="#38BDF8" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" filter="url(#wti-glow)"/>
-          ` : ''}
+          <!-- WTI Line (Blue #38BDF8) -->
+          <path d="${pathWti}" fill="none" stroke="#38BDF8" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" filter="url(#ref-wti-glow)"/>
 
-          <!-- Brent Line (Yellow) -->
-          <path d="${pathBrent}" fill="none" stroke="#E5A93C" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" filter="url(#brent-glow)"/>
-
-          <!-- Active point indicators -->
-          <circle cx="${curBrent.x.toFixed(1)}" cy="${curBrent.y.toFixed(1)}" r="4.5" fill="#E5A93C" stroke="#0E1726" stroke-width="2"/>
-          ${rawWti.length ? `
-            <circle cx="${curWti.x.toFixed(1)}" cy="${curWti.y.toFixed(1)}" r="4.5" fill="#38BDF8" stroke="#0E1726" stroke-width="2"/>
-          ` : ''}
+          <!-- Brent Line (Orange/Gold #F59E0B) -->
+          <path d="${pathBrent}" fill="none" stroke="#F59E0B" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" filter="url(#ref-brent-glow)"/>
         </svg>
 
         <!-- Chart Legend Center -->
-        <div class="overview-chart-legend">
-          <span class="legend-line-item"><span class="legend-line-indicator" style="background:#E5A93C"></span> Brent</span>
-          <span class="legend-line-item"><span class="legend-line-indicator" style="background:#38BDF8"></span> WTI</span>
+        <div style="display:flex;align-items:center;justify-content:center;gap:20px;margin-top:10px;font-size:12px;font-weight:600">
+          <span style="display:flex;align-items:center;gap:6px;color:var(--text-main)">
+            <span style="width:16px;height:2.5px;background:#F59E0B;display:inline-block;border-radius:1px"></span>
+            Brent
+          </span>
+          <span style="display:flex;align-items:center;gap:6px;color:var(--text-main)">
+            <span style="width:16px;height:2.5px;background:#38BDF8;display:inline-block;border-radius:1px"></span>
+            WTI
+          </span>
         </div>
 
         <!-- Chart Footer -->
-        <div class="overview-chart-footer">
+        <div class="overview-chart-footer" style="display:flex;justify-content:space-between;align-items:center;margin-top:10px;padding-top:8px;border-top:1px solid var(--border-card-subtle);font-size:11px;color:var(--text-muted)">
           <div>Nguồn: Yahoo Finance · Brent 07:44 16/11/2026 · WTI 07:48 16/11/2026</div>
-          <div style="cursor:pointer;color:var(--accent-teal);display:flex;align-items:center;gap:4px" data-action="nav-market-detail" data-inst-id="brent_futures">
+          <div style="cursor:pointer;color:var(--text-muted);display:flex;align-items:center;gap:4px" data-action="nav-market-detail" data-inst-id="brent_futures">
             <span>⤢</span> Datapoint
           </div>
         </div>
       </div>
     `;
   }
+
 
   /* TRANG 1: TỔNG QUAN THỊ TRƯỜNG (COMPACT VIBE DASHBOARD WITH BẢNG GIÁ NHANH) */
   function renderOverviewPage() {
@@ -595,18 +574,18 @@
     const crack321 = D.instruments.find(i => i.id === 'crack_321') || D.instruments[5];
 
     const tickerItems = [
-      { id: brent.id, symbol: 'BRENT', value: 95.41, unit: 'USD/thùng', decimals: 2, pct: 4.28, meta: 'Delayed · 07:44 16/11/2026' },
-      { id: wti.id, symbol: 'WTI', value: 88.36, unit: 'USD/thùng', decimals: 2, pct: 2.70, meta: 'Delayed · Yahoo Finance' },
-      { id: gasoline.id, symbol: 'RBOB GASOLINE', value: 2.5936, unit: 'USD/gal', decimals: 4, pct: -0.58, meta: 'Delayed · Yahoo Finance' },
-      { id: dxy.id, symbol: 'DXY', value: 103.43, unit: 'điểm', decimals: 2, pct: 1.17, meta: 'Delayed · Yahoo Finance' },
+      { id: brent.id, symbol: 'BRENT', value: 95.44, unit: 'USD/thùng', decimals: 2, pct: 4.32, meta: 'Delayed · 11:07 16/11/2026' },
+      { id: wti.id, symbol: 'WTI', value: 88.52, unit: 'USD/thùng', decimals: 2, pct: 2.88, meta: 'Delayed · Yahoo Finance' },
+      { id: gasoline.id, symbol: 'RBOB GASOLINE', value: 2.5964, unit: 'USD/gal', decimals: 4, pct: -0.48, meta: 'Delayed · Yahoo Finance' },
+      { id: dxy.id, symbol: 'DXY', value: 103.46, unit: 'điểm', decimals: 2, pct: 1.17, meta: 'Delayed · Yahoo Finance' },
       { id: usdvnd.id, symbol: 'USD/VND', value: 25711, unit: 'VND', decimals: 0, pct: 0.79, meta: 'Delayed · Yahoo Finance' },
       { id: crack321.id, symbol: 'CRACK 3-2-1', value: 37.22, unit: 'USD/thùng', decimals: 2, pct: 2.16, meta: 'Tóm tắt 07:57 16/11/2026' }
     ];
 
     // 10 instruments for "Bảng giá nhanh" table
     const quickTableItems = [
-      { id: 'brent_futures', name: 'Brent', source: 'Delayed · Yahoo Finance', value: 95.41, unit: 'USD/thùng', decimals: 2, pct: 4.28 },
-      { id: 'wti_futures', name: 'WTI', source: 'Delayed · Yahoo Finance', value: 88.36, unit: 'USD/thùng', decimals: 2, pct: 2.70 },
+      { id: 'brent_futures', name: 'Brent', source: 'Delayed · Yahoo Finance', value: 95.44, unit: 'USD/thùng', decimals: 2, pct: 4.28 },
+      { id: 'wti_futures', name: 'WTI', source: 'Delayed · Yahoo Finance', value: 88.52, unit: 'USD/thùng', decimals: 2, pct: 2.70 },
       { id: 'ron95_physical', name: 'Gasoline', source: 'Delayed · Yahoo Finance', value: 2.59, unit: 'USD/gallon', decimals: 2, pct: -0.58 },
       { id: 'diesel_physical', name: 'Diesel/ULSD', source: 'Delayed · Yahoo Finance', value: 4.29, unit: 'USD/gallon', decimals: 2, pct: 3.76 },
       { id: 'wti_spot', name: 'WTI Spot', source: 'EOD · FRED - St. Louis Fed', value: 89.62, unit: 'USD/thùng', decimals: 2, pct: 0.00 },
@@ -674,40 +653,34 @@
         <div class="overview-hero-grid">
           <!-- CỘT TRÁI (62%): BIỂU ĐỒ CHÍNH & TÓM TẮT AI BRIEFING -->
           <div class="overview-left-col">
-            <!-- KHUNG BIỂU ĐỒ CHI TIẾT TẠI CHỖ -->
+            <!-- KHUNG BIỂU ĐỒ CHI TIẾT TẠI CHỖ (CHUẨN XÁC 100% THEO THIẾT KẾ GỐC) -->
             <div class="overview-chart-box" id="inplace-chart-panel">
               <div class="overview-chart-header">
                 <div>
                   <div class="overview-chart-title">
-                    ${state.overviewCompareDual ? 'So sánh Brent & WTI - Biểu đồ Đa trục' : `${esc(activeInst.name)} — Biểu đồ Xu hướng`}
+                    ${(activeInstId === 'brent_futures' || activeInstId === 'wti_futures') ? 'Brent &amp; WTI · 1 tháng' : `${esc(activeInst.name)} — Biểu đồ Xu hướng`}
                   </div>
                   <div class="overview-chart-sub">
-                    Nguồn: ${esc(activeInst.source || 'Yahoo Finance')}. Đường giá đã điều chỉnh theo dữ liệu thực tế.
+                    ${(activeInstId === 'brent_futures' || activeInstId === 'wti_futures') ? 'Futures, nguồn Yahoo Finance. Đường giá đã điều chỉnh theo dữ liệu nguồn.' : `Nguồn: ${esc(activeInst.source || 'Yahoo Finance')}. Đường giá đã điều chỉnh theo dữ liệu thực tế.`}
                   </div>
                 </div>
-                <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-                  <button class="btn btn-outline btn-sm ${state.overviewCompareDual ? 'active' : ''}" data-action="toggle-overview-dual" style="font-size:11px;padding:3px 8px;border-color:var(--accent-teal);color:var(--accent-teal)" title="Bật/tắt so sánh 2 đường Brent & WTI">
-                    ${state.overviewCompareDual ? '✕ Chỉ xem 1 đường' : '⚡ So sánh Brent & WTI'}
-                  </button>
-                  <div class="chart-range-pills" style="margin:0">
-                    ${['1D', '1W', '1M', '3M', '1Y'].map(r => `
-                      <button class="chart-range-btn ${state.overviewChartRange === r ? 'active' : ''}" data-action="set-overview-range" data-range="${r}">${r}</button>
-                    `).join('')}
-                  </div>
-                  <button class="btn-link" data-action="nav-market-detail" data-inst-id="${activeInst.id}" style="color:var(--accent-teal);font-size:12px;font-weight:600;display:flex;align-items:center;gap:4px">
+                <div style="display:flex;align-items:center;gap:10px">
+                  ${(activeInstId !== 'brent_futures' && activeInstId !== 'wti_futures') ? `
+                    <div class="chart-range-pills" style="margin:0">
+                      ${['1D', '1W', '1M', '3M', '1Y'].map(r => `
+                        <button class="chart-range-btn ${state.overviewChartRange === r ? 'active' : ''}" data-action="set-overview-range" data-range="${r}">${r}</button>
+                      `).join('')}
+                    </div>
+                  ` : ''}
+                  <button class="btn-link" data-action="nav-market-detail" data-inst-id="${activeInst.id}" style="color:var(--text-muted);font-size:12px;font-weight:600;display:flex;align-items:center;gap:4px">
                     Mở dữ liệu ↗
                   </button>
                 </div>
               </div>
 
               ${canViewActive ? `
-                ${state.overviewCompareDual ? `
-                  ${renderOverviewDualChart({
-                    brentInst: brent,
-                    wtiInst: wti,
-                    range: state.overviewChartRange || '1M',
-                    height: 210
-                  })}
+                ${(activeInstId === 'brent_futures' || activeInstId === 'wti_futures') ? `
+                  ${renderOverviewDualChart()}
                 ` : `
                   ${renderCleanChartSvg({
                     series: activeInst.series,
@@ -715,33 +688,33 @@
                     unit1: activeInst.unit,
                     decimals1: activeInst.decimals,
                     range: state.overviewChartRange || '1M',
-                    color1: activeInst.id === 'brent_futures' ? '#F59E0B' : (activeInst.id === 'wti_futures' ? '#38BDF8' : '#00E5FF'),
-                    height: 210,
+                    color1: '#00E5FF',
+                    height: 250,
                     chartId: 'inplace-overview-chart'
                   })}
-                `}
 
-                <!-- Thanh tóm tắt 4 chỉ số thống kê gọn gàng -->
-                <div class="inplace-summary-row" style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border-card-subtle)">
-                  <div class="inplace-stat-card">
-                    <span class="inplace-stat-label">Giá hiện tại</span>
-                    <span class="inplace-stat-val" style="color:var(--accent-teal)">${fmtNum(activeInst.value, activeInst.decimals)} ${esc(activeInst.unit)}</span>
+                  <!-- Thanh tóm tắt 4 chỉ số thống kê gọn gàng -->
+                  <div class="inplace-summary-row" style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border-card-subtle)">
+                    <div class="inplace-stat-card">
+                      <span class="inplace-stat-label">Giá hiện tại</span>
+                      <span class="inplace-stat-val" style="color:var(--accent-teal)">${fmtNum(activeInst.value, activeInst.decimals)} ${esc(activeInst.unit)}</span>
+                    </div>
+                    <div class="inplace-stat-card">
+                      <span class="inplace-stat-label">Cao nhất kỳ</span>
+                      <span class="inplace-stat-val">${fmtNum(Math.max(...(activeInst.series || []).slice(-30).map(d => d.value)), activeInst.decimals)} ${esc(activeInst.unit)}</span>
+                    </div>
+                    <div class="inplace-stat-card">
+                      <span class="inplace-stat-label">Thấp nhất kỳ</span>
+                      <span class="inplace-stat-val">${fmtNum(Math.min(...(activeInst.series || []).slice(-30).map(d => d.value)), activeInst.decimals)} ${esc(activeInst.unit)}</span>
+                    </div>
+                    <div class="inplace-stat-card">
+                      <span class="inplace-stat-label">Biến động phiên</span>
+                      <span class="inplace-stat-val ${activeInst.change >= 0 ? 'pos' : 'neg'}" style="color:${activeInst.change >= 0 ? 'var(--pos-green)' : 'var(--neg-red)'}">
+                        ${activeInst.change >= 0 ? '+' : ''}${fmtSigned(activeInst.change, activeInst.decimals)} (${fmtPct(activeInst.pct)})
+                      </span>
+                    </div>
                   </div>
-                  <div class="inplace-stat-card">
-                    <span class="inplace-stat-label">Cao nhất kỳ</span>
-                    <span class="inplace-stat-val">${fmtNum(Math.max(...(activeInst.series || []).slice(-30).map(d => d.value)), activeInst.decimals)} ${esc(activeInst.unit)}</span>
-                  </div>
-                  <div class="inplace-stat-card">
-                    <span class="inplace-stat-label">Thấp nhất kỳ</span>
-                    <span class="inplace-stat-val">${fmtNum(Math.min(...(activeInst.series || []).slice(-30).map(d => d.value)), activeInst.decimals)} ${esc(activeInst.unit)}</span>
-                  </div>
-                  <div class="inplace-stat-card">
-                    <span class="inplace-stat-label">Biến động phiên</span>
-                    <span class="inplace-stat-val ${activeInst.change >= 0 ? 'pos' : 'neg'}" style="color:${activeInst.change >= 0 ? 'var(--pos-green)' : 'var(--neg-red)'}">
-                      ${activeInst.change >= 0 ? '+' : ''}${fmtSigned(activeInst.change, activeInst.decimals)} (${fmtPct(activeInst.pct)})
-                    </span>
-                  </div>
-                </div>
+                `}
               ` : `
                 <div class="metric-card-locked" style="min-height:180px">
                   <div class="locked-icon-wrap">${ico('lock', 20)}</div>
@@ -1627,14 +1600,14 @@
               <div style="margin-top:16px">
                 <div style="font-size:12px;font-weight:700;color:var(--primary-navy);margin-bottom:8px">Tài liệu đã nạp gần đây:</div>
                 <div style="display:flex;flex-direction:column;gap:8px">
-                  <div style="padding:10px;background:#0E182F;border-radius:6px;display:flex;align-items:center;justify-content:space-between">
+                  <div style="padding:10px;background:var(--bg-card-subtle);border:1px solid var(--border-card);border-radius:6px;display:flex;align-items:center;justify-content:space-between">
                     <div>
                       <strong style="font-size:12px">Platts_Oilgram_Report_20261114.pdf</strong>
                       <div style="font-size:10.5px;color:var(--text-muted)">2.4 MB · AI đã trích xuất 8 thực thể giá</div>
                     </div>
                     <span class="badge badge-success">Đã xử lý</span>
                   </div>
-                  <div style="padding:10px;background:#0E182F;border-radius:6px;display:flex;align-items:center;justify-content:space-between">
+                  <div style="padding:10px;background:var(--bg-card-subtle);border:1px solid var(--border-card);border-radius:6px;display:flex;align-items:center;justify-content:space-between">
                     <div>
                       <strong style="font-size:12px">Ton_kho_Dau_tho_DungQuat_T11.xlsx</strong>
                       <div style="font-size:10.5px;color:var(--text-muted)">1.1 MB · Đã cập nhật mức tồn kho 285.000 tấn</div>
@@ -1684,7 +1657,7 @@
           <!-- Khung cuộn mượt mà bên trong Review Queue -->
           <div class="review-queue-scroll-body" style="padding:14px 18px;display:flex;flex-direction:column;gap:12px;flex:1;overflow-y:auto;min-height:0">
             ${D.top10News.map(n => `
-              <div style="border:1px solid var(--border-card);border-radius:8px;padding:12px 14px;background:#0E182F;transition:border-color 0.15s">
+              <div style="border:1px solid var(--border-card);border-radius:8px;padding:12px 14px;background:var(--bg-card-subtle);transition:border-color 0.15s">
                 <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
                   <div style="display:flex;align-items:center;gap:6px">
                     <span class="badge badge-source">${esc(n.source)}</span>
@@ -1699,18 +1672,18 @@
                 <h4 style="font-size:13px;font-weight:700;color:var(--text-main);margin-bottom:6px;line-height:1.35">${esc(n.title)}</h4>
 
                 <div style="display:flex;flex-direction:column;gap:5px;font-size:11.5px;margin:8px 0">
-                  <div style="background:rgba(59,130,246,0.12);padding:5px 9px;border-radius:4px;border-left:3px solid #3B82F6">
-                    <strong style="color:#60A5FA">[Nguồn gốc]:</strong> Trích nguyên văn từ bản tin ${esc(n.source)}.
+                  <div style="background:var(--badge-source-bg);color:var(--text-sub);padding:6px 10px;border-radius:4px;border-left:3px solid var(--badge-source-text)">
+                    <strong style="color:var(--badge-source-text)">[Nguồn gốc]:</strong> Trích nguyên văn từ bản tin ${esc(n.source)}.
                   </div>
-                  <div style="background:rgba(168,85,247,0.12);padding:5px 9px;border-radius:4px;border-left:3px solid #A855F7">
-                    <strong style="color:#C084FC">[AI Tóm tắt]:</strong> ${esc(n.summary)}
+                  <div style="background:var(--badge-ai-summary-bg);color:var(--text-sub);padding:6px 10px;border-radius:4px;border-left:3px solid var(--badge-ai-summary-text)">
+                    <strong style="color:var(--badge-ai-summary-text)">[AI Tóm tắt]:</strong> ${esc(n.summary)}
                   </div>
-                  <div style="background:rgba(245,158,11,0.12);padding:5px 9px;border-radius:4px;border-left:3px solid #F59E0B">
-                    <strong style="color:#FBBF24">[AI Nhận định]:</strong> Tác động tích cực đến hiệu quả biên lọc dầu BSR trong ngắn hạn.
+                  <div style="background:var(--badge-ai-insight-bg);color:var(--text-sub);padding:6px 10px;border-radius:4px;border-left:3px solid var(--badge-ai-insight-text)">
+                    <strong style="color:var(--badge-ai-insight-text)">[AI Nhận định]:</strong> Tác động tích cực đến hiệu quả biên lọc dầu BSR trong ngắn hạn.
                   </div>
                 </div>
 
-                <div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px;padding-top:6px;border-top:1px solid rgba(255,255,255,0.05)">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px;padding-top:6px;border-top:1px solid var(--border-card)">
                   <span style="font-size:10.5px;color:var(--text-muted)">Trạng thái: Đã kiểm duyệt</span>
                   <button class="btn btn-sm btn-primary" data-action="publish-news" data-news-id="${n.id}" style="padding:3px 10px;font-size:11px">
                     Duyệt xuất bản
@@ -2212,7 +2185,7 @@
                 `;
               } else {
                 return `
-                  <div style="align-self:flex-start;max-width:92%;background:#0E182F;border:1px solid var(--border-card);padding:16px;border-radius:12px 12px 12px 2px;box-shadow:var(--shadow-sm)">
+                  <div style="align-self:flex-start;max-width:92%;background:var(--bg-card-subtle);border:1px solid var(--border-card);padding:16px;border-radius:12px 12px 12px 2px;box-shadow:var(--shadow-sm)">
                     <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px">
                       <span class="badge badge-ai-summary">${ico('sparkle', 12)} Auker Reasoning Trace</span>
                       <span style="font-size:10.5px;color:var(--text-muted)">Deterministic Execution</span>
@@ -2238,7 +2211,7 @@
             }).join('')}
           </div>
 
-          <div style="padding:14px 18px;border-top:1px solid var(--border-card);background:#0E182F">
+          <div style="padding:14px 18px;border-top:1px solid var(--border-card);background:var(--bg-card-subtle)">
             <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
               <span style="font-size:11px;font-weight:600;color:var(--text-muted)">Mức bảo mật câu hỏi / file:</span>
               <select class="form-control-select" style="width:170px;padding:3px 8px;font-size:11px" id="chat-security-select">
@@ -2318,7 +2291,7 @@
             </div>
           </div>
 
-          <div style="padding:12px 16px;border-top:1px solid var(--border-card);background:#0E182F;display:flex;gap:8px">
+          <div style="padding:12px 16px;border-top:1px solid var(--border-card);background:var(--bg-card-subtle);display:flex;gap:8px">
             <button class="btn btn-sm btn-primary" style="flex:1" data-action="save-to-report-library">
               Lưu vào Thư viện (Trang 3)
             </button>
@@ -2449,17 +2422,17 @@
         </div>
         <div style="padding:20px;font-size:13px;line-height:1.6;color:var(--text-sub)">
           <p><strong style="color:var(--primary-navy)">1. Crack Spread Xăng RON95 Physical (CS-PHYS-1 v2.1):</strong></p>
-          <div style="background:#0E182F;padding:10px;border-radius:6px;font-family:var(--font-mono);margin:6px 0 14px;color:#00E5FF">
+          <div style="background:var(--bg-card-subtle);border:1px solid var(--border-card);padding:10px;border-radius:6px;font-family:var(--font-mono);margin:6px 0 14px;color:var(--accent-teal)">
             CS_RON95 = Giá Xăng RON95 FOB Singapore (USD/bbl) − Giá Dated Brent Physical (USD/bbl)
           </div>
 
           <p><strong style="color:var(--primary-navy)">2. Crack Spread Dầu Diesel 10ppm Physical (CS-PHYS-2 v2.0):</strong></p>
-          <div style="background:#0E182F;padding:10px;border-radius:6px;font-family:var(--font-mono);margin:6px 0 14px;color:#00E5FF">
+          <div style="background:var(--bg-card-subtle);border:1px solid var(--border-card);padding:10px;border-radius:6px;font-family:var(--font-mono);margin:6px 0 14px;color:var(--accent-teal)">
             CS_Diesel = Giá Diesel 10ppm FOB Singapore (USD/bbl) − Giá Dated Brent Physical (USD/bbl)
           </div>
 
           <p><strong style="color:var(--primary-navy)">3. Crack Spread 3-2-1 Phức hợp Dung Quất (CS-321-BSR v1.4):</strong></p>
-          <div style="background:#0E182F;padding:10px;border-radius:6px;font-family:var(--font-mono);margin:6px 0;color:#00E5FF">
+          <div style="background:var(--bg-card-subtle);border:1px solid var(--border-card);padding:10px;border-radius:6px;font-family:var(--font-mono);margin:6px 0;color:var(--accent-teal)">
             CS_321 = (2 × Giá RON95 + 1 × Giá Diesel 10ppm − 3 × Giá Brent) / 3
           </div>
         </div>
