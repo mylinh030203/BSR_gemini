@@ -1,0 +1,13 @@
+__pycache__/
+*.pyc
+.pytest_cache/
+instance/
+.rai/jobs/
+.rai/screenshots/
+tmp/
+.env
+.env.*
+!.env.example
+*.db
+*.db-wal
+*.db-shm
