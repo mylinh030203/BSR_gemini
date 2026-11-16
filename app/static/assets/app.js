@@ -2286,7 +2286,7 @@
               công suất phân xưởng CDU duy trì 105%, đảm bảo biên lợi nhuận kinh doanh tối ưu trong quý 4.
             </p>
 
-            <div style="background:#131E36;border:1px solid var(--border-card);padding:10px;border-radius:4px;margin-top:14px">
+            <div style="background:var(--bg-card-subtle);border:1px solid var(--border-card);padding:10px;border-radius:6px;margin-top:14px;color:var(--text-sub)">
               <strong style="color:var(--primary-navy)">Khuyến nghị Điều hành:</strong> Đề xuất lãnh đạo phê duyệt kế hoạch chốt giá lô dầu ngọt nhẹ kỳ giao tháng 12/2026.
             </div>
           </div>
@@ -2385,7 +2385,7 @@
           ${esc(n.summary)}
         </div>
 
-        <div style="background:#0A0F1D;border:1px solid var(--border-card);padding:12px;border-radius:6px;font-size:12px">
+        <div style="background:var(--bg-card-subtle);border:1px solid var(--border-card);padding:12px;border-radius:6px;font-size:12px;color:var(--text-sub)">
           <strong style="color:var(--primary-navy)">Độ phủ nguồn tin:</strong> Tin tức được ghi nhận đồng thời từ Reuters và Platts. Đã loại trừ trùng lặp nội dung.
         </div>
       `;
