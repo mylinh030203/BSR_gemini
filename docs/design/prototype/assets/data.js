@@ -4,7 +4,7 @@
 (function () {
   'use strict';
   const DAY = 86400000;
-  const end = new Date('2026-11-14T09:42:00+07:00');
+  const end = new Date('2026-11-16T07:57:00+07:00');
 
   function series(base, drift, vol, seed, n) {
     const out = [];
@@ -36,6 +36,81 @@
   }
 
   const instruments = [
+    {
+      id: 'wti_spot',
+      name: 'Dầu thô WTI Spot (EOD)',
+      short: 'WTI Spot',
+      group: 'Futures & Tham chiếu',
+      subgroup: 'Dầu thô',
+      ticker: 'WTI-SPOT',
+      value: 89.62,
+      unit: 'USD/thùng',
+      priceType: 'Spot',
+      source: 'FRED - St. Louis Fed',
+      sourceId: 'SRC-FRED',
+      marketTime: '15/11/2026 · 17:00 ICT',
+      ingestionTime: '16/11/2026 · 07:00 ICT',
+      dataStatus: 'EOD',
+      quality: 'Hợp lệ',
+      classification: 'Internal',
+      decimals: 2,
+      change: 0.00,
+      pct: 0.00,
+      isPriority: false,
+      spark: series(89.62, 0.005, 1.2, 31, 40),
+      series: series(89.62, 0.005, 1.2, 31, 365),
+      description: 'Giá giao ngay dầu thô WTI (West Texas Intermediate) do Cục Dự trữ Liên bang St. Louis (FRED) cung cấp.'
+    },
+    {
+      id: 'retail_gasoline',
+      name: 'Xăng bán lẻ Mỹ (US Regular Retail)',
+      short: 'Xăng bán lẻ Mỹ',
+      group: 'Futures & Tham chiếu',
+      subgroup: 'Sản phẩm lọc dầu',
+      ticker: 'US-GAS-RETAIL',
+      value: 4.00,
+      unit: 'USD/gallon',
+      priceType: 'Chỉ số',
+      source: 'FRED - St. Louis Fed',
+      sourceId: 'SRC-FRED',
+      marketTime: '15/11/2026 · 17:00 ICT',
+      ingestionTime: '16/11/2026 · 07:00 ICT',
+      dataStatus: 'EOD',
+      quality: 'Hợp lệ',
+      classification: 'Internal',
+      decimals: 2,
+      change: -0.15,
+      pct: -3.80,
+      isPriority: false,
+      spark: series(4.00, -0.01, 0.08, 33, 40),
+      series: series(4.00, -0.01, 0.08, 33, 365),
+      description: 'Giá xăng bán lẻ bình quân toàn nước Mỹ theo thống kê của EIA và FRED.'
+    },
+    {
+      id: 'eur_usd',
+      name: 'Tỷ giá EUR/USD',
+      short: 'EUR/USD',
+      group: 'Futures & Tham chiếu',
+      subgroup: 'Tỷ giá',
+      ticker: 'EURUSD=X',
+      value: 1.10,
+      unit: 'USD',
+      priceType: 'Tỷ giá',
+      source: 'Yahoo Finance',
+      sourceId: 'SRC-YF',
+      marketTime: '16/11/2026 · 07:44 ICT',
+      ingestionTime: '16/11/2026 · 07:50 ICT',
+      dataStatus: 'Delayed',
+      quality: 'Hợp lệ',
+      classification: 'Internal',
+      decimals: 2,
+      change: -0.019,
+      pct: -1.74,
+      isPriority: false,
+      spark: series(1.10, -0.002, 0.015, 35, 40),
+      series: series(1.10, -0.002, 0.015, 35, 365),
+      description: 'Tỷ giá hối đoái EUR/USD thị trường quốc tế theo thời gian thực (Delayed 15m).'
+    },
     /* Dải 1: Nhóm Ưu tiên BSR & Physical (Hàng đầu, viền nhấn, Mật / Nội bộ) */
     {
       id: 'brent_physical',
@@ -44,7 +119,7 @@
       group: 'Physical & BSR',
       subgroup: 'Dầu thô',
       ticker: 'BRD',
-      value: 77.90,
+      value: 92.14,
       unit: 'USD/bbl',
       priceType: 'Physical',
       source: 'Platts',
@@ -55,8 +130,8 @@
       quality: 'Hợp lệ',
       classification: 'Restricted',
       decimals: 2,
-      change: 0.80,
-      pct: 1.04,
+      change: 1.98,
+      pct: 2.20,
       isPriority: true,
       spark: series(77.9, 0.018, 1.5, 11, 40),
       series: series(77.9, 0.018, 1.6, 11, 365),
@@ -235,7 +310,7 @@
       group: 'Tham chiếu thị trường',
       subgroup: 'Dầu thô',
       ticker: 'BRN',
-      value: 78.42,
+      value: 95.41,
       unit: 'USD/bbl',
       priceType: 'Futures',
       source: 'ICE',
@@ -246,11 +321,20 @@
       quality: 'Hợp lệ',
       classification: 'Internal',
       decimals: 2,
-      change: 1.07,
-      pct: 1.38,
+      change: 3.92,
+      pct: 4.28,
       isPriority: false,
       spark: series(78.42, 0.02, 1.6, 3, 40),
-      series: series(78.42, 0.02, 1.8, 3, 365),
+      series: (function() {
+        const brent30 = [105.91, 107.34, 108.75, 110.12, 111.43, 112.66, 113.79, 114.81, 115.7, 116.44, 117.04, 117.47, 117.74, 117.83, 113.76, 109.61, 105.72, 102.23, 99.24, 96.86, 95.16, 94.2, 93.98, 94.03, 94.15, 94.32, 94.54, 94.81, 95.1, 95.41];
+        const out = [];
+        for (let i = 0; i < 365; i++) {
+          const d = new Date(end.getTime() - (364 - i) * DAY);
+          const val = i >= 335 ? brent30[i - 335] : Math.round((105 + Math.sin(i * 0.05) * 10) * 100) / 100;
+          out.push({ date: d, value: val });
+        }
+        return out;
+      })(),
       description: 'Hợp đồng tương lai dầu thô Brent kỳ hạn tháng gần nhất giao dịch trên sàn ICE Luân Đôn.'
     },
     {
@@ -260,7 +344,7 @@
       group: 'Tham chiếu thị trường',
       subgroup: 'Dầu thô',
       ticker: 'CL',
-      value: 74.18,
+      value: 88.36,
       unit: 'USD/bbl',
       priceType: 'Futures',
       source: 'CME',
@@ -271,11 +355,20 @@
       quality: 'Hợp lệ',
       classification: 'Internal',
       decimals: 2,
-      change: 0.52,
-      pct: 0.71,
+      change: 2.32,
+      pct: 2.70,
       isPriority: false,
       spark: series(74.18, 0.015, 1.3, 7, 40),
-      series: series(74.18, 0.015, 1.4, 7, 365),
+      series: (function() {
+        const wti30 = [98.08, 98.78, 99.47, 100.14, 100.78, 101.38, 101.93, 102.43, 102.87, 103.23, 103.52, 103.73, 103.86, 103.91, 100.85, 97.73, 94.8, 92.18, 89.93, 88.14, 86.86, 86.14, 85.98, 86.06, 86.25, 86.54, 86.92, 87.36, 87.85, 88.36];
+        const out = [];
+        for (let i = 0; i < 365; i++) {
+          const d = new Date(end.getTime() - (364 - i) * DAY);
+          const val = i >= 335 ? wti30[i - 335] : Math.round((98 + Math.sin(i * 0.05) * 8) * 100) / 100;
+          out.push({ date: d, value: val });
+        }
+        return out;
+      })(),
       description: 'Hợp đồng tương lai dầu ngọt nhẹ WTI kỳ hạn tháng gần nhất giao dịch trên sàn NYMEX/CME.'
     },
     {
@@ -285,7 +378,7 @@
       group: 'Tham chiếu thị trường',
       subgroup: 'Crack Spread',
       ticker: 'CS-321',
-      value: 19.40,
+      value: 37.22,
       unit: 'USD/bbl',
       priceType: 'Tính toán',
       source: 'BSR Analytical',
@@ -317,7 +410,7 @@
       group: 'Tham chiếu thị trường',
       subgroup: 'Tỷ giá',
       ticker: 'USDVND',
-      value: 25480,
+      value: 25711,
       unit: 'VND',
       priceType: 'Chỉ số',
       source: 'NHNN Việt Nam (SBV)',
@@ -328,8 +421,8 @@
       quality: 'Hợp lệ',
       classification: 'Public',
       decimals: 0,
-      change: 35,
-      pct: 0.14,
+      change: 201,
+      pct: 0.79,
       isPriority: false,
       spark: series(25480, 0.004, 90, 31, 40).map(p => ({ ...p, value: Math.round(p.value) })),
       series: series(25480, 0.004, 90, 31, 365).map(p => ({ ...p, value: Math.round(p.value) })),
@@ -342,7 +435,7 @@
       group: 'Tham chiếu thị trường',
       subgroup: 'Tỷ giá',
       ticker: 'DXY',
-      value: 104.12,
+      value: 103.43,
       unit: 'Điểm',
       priceType: 'Chỉ số',
       source: 'ICE',
@@ -353,8 +446,8 @@
       quality: 'Hợp lệ',
       classification: 'Internal',
       decimals: 2,
-      change: -0.18,
-      pct: -0.17,
+      change: 1.20,
+      pct: 1.17,
       isPriority: false,
       spark: series(104.12, -0.002, 0.5, 35, 40),
       series: series(104.12, -0.002, 0.55, 35, 365),

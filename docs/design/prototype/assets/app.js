@@ -19,7 +19,7 @@
     /* Theme & Overview State */
     theme: localStorage.getItem('bsr_theme') || 'light',
     overviewTab: 'all',
-    activeOverviewInstrument: 'brent_physical',
+    activeOverviewInstrument: null,
     overviewChartRange: '1M',
     
     /* Market Data Page State */
@@ -463,475 +463,774 @@
      PAGE RENDERERS
      ========================================================================== */
 
-  /* TRANG 1: TỔNG QUAN THỊ TRƯỜNG */
+  /* BIỂU ĐỒ KÉP BRENT & WTI CHO TRANG TỔNG QUAN (VIBE & HERO CHART) */
+  function renderOverviewDualChart({ brentInst, wtiInst, range = '1M', height = 230 }) {
+    const W = 840, H = height;
+    const pad = { l: 55, r: 25, t: 20, b: 35 };
+
+    const pointsCount = range === '1D' ? 14 : range === '1W' ? 20 : range === '1M' ? 30 : range === '3M' ? 60 : 90;
+    const rawBrent = (brentInst?.series || []).slice(-pointsCount);
+    const rawWti = (wtiInst?.series || []).slice(-pointsCount);
+
+    if (!rawBrent.length) {
+      return '<div class="empty-state">Không có dữ liệu biểu đồ</div>';
+    }
+
+    const brentVals = rawBrent.map(d => d.value);
+    const wtiVals = rawWti.length ? rawWti.map(d => d.value) : brentVals;
+
+    const allVals = [...brentVals, ...wtiVals];
+    const dataMin = Math.min(...allVals);
+    const dataMax = Math.max(...allVals);
+    let minVal = 80;
+    let maxVal = 120;
+    if (dataMin < 80) minVal = Math.floor(dataMin / 10) * 10;
+    if (dataMax > 120) maxVal = Math.ceil(dataMax / 10) * 10;
+    const span = maxVal - minVal || 1;
+
+    const brentPts = rawBrent.map((pt, i) => ({
+      x: pad.l + (i / (rawBrent.length - 1)) * (W - pad.l - pad.r),
+      y: pad.t + (1 - (pt.value - minVal) / span) * (H - pad.t - pad.b),
+      date: pt.date,
+      value: pt.value
+    }));
+
+    const wtiPts = rawWti.map((pt, i) => ({
+      x: pad.l + (i / (rawWti.length - 1)) * (W - pad.l - pad.r),
+      y: pad.t + (1 - (pt.value - minVal) / span) * (H - pad.t - pad.b),
+      date: pt.date,
+      value: pt.value
+    }));
+
+    const pathBrent = getSmoothPath(brentPts);
+    const pathWti = rawWti.length ? getSmoothPath(wtiPts) : '';
+
+    /* 5 Horizontal Gridlines & Y-Axis values */
+    let gridLines = '', yLabels = '';
+    const steps = 4;
+    for (let i = 0; i <= steps; i++) {
+      const gy = pad.t + (i / steps) * (H - pad.t - pad.b);
+      const v = maxVal - (i / steps) * (maxVal - minVal);
+      gridLines += `<line x1="${pad.l}" y1="${gy.toFixed(1)}" x2="${(W - pad.r).toFixed(1)}" y2="${gy.toFixed(1)}" stroke="rgba(255,255,255,0.06)" stroke-width="1" stroke-dasharray="3,3"/>`;
+      yLabels += `<text x="${pad.l - 10}" y="${(gy + 4).toFixed(1)}" font-size="10.5" font-family="var(--font-mono)" fill="#64748B" text-anchor="end">${fmtNum(v, 2)}</text>`;
+    }
+
+    /* X Axis dates (formatted as DD-MM) */
+    let xLabels = '';
+    const dateIntervals = [0, Math.floor(brentPts.length * 0.12), Math.floor(brentPts.length * 0.25), Math.floor(brentPts.length * 0.38), Math.floor(brentPts.length * 0.5), Math.floor(brentPts.length * 0.62), Math.floor(brentPts.length * 0.75), Math.floor(brentPts.length * 0.88), brentPts.length - 1];
+    const seenIndices = new Set();
+    dateIntervals.forEach(idx => {
+      if (seenIndices.has(idx)) return;
+      seenIndices.add(idx);
+      const p = brentPts[idx];
+      if (!p) return;
+      const dObj = p.date ? new Date(p.date) : new Date();
+      const dStr = `${String(dObj.getDate()).padStart(2, '0')}-${String(dObj.getMonth() + 1).padStart(2, '0')}`;
+      xLabels += `<text x="${p.x.toFixed(1)}" y="${H - 12}" font-size="10" fill="#64748B" text-anchor="middle" font-family="var(--font-mono)">${dStr}</text>`;
+      xLabels += `<line x1="${p.x.toFixed(1)}" y1="${H - pad.b}" x2="${p.x.toFixed(1)}" y2="${H - pad.b + 4}" stroke="rgba(255,255,255,0.1)" stroke-width="1"/>`;
+    });
+
+    const activeIdx = state.hoverChartIndex != null ? Math.min(state.hoverChartIndex, brentPts.length - 1) : brentPts.length - 1;
+    const curBrent = brentPts[activeIdx];
+    const curWti = wtiPts[activeIdx] || curBrent;
+
+    return `
+      <div class="clean-chart-container" style="position:relative">
+        <svg class="chart-svg-main" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" style="height:${H}px;width:100%">
+          <defs>
+            <filter id="brent-glow" x="-10%" y="-10%" width="120%" height="120%">
+              <feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#E5A93C" flood-opacity="0.3"/>
+            </filter>
+            <filter id="wti-glow" x="-10%" y="-10%" width="120%" height="120%">
+              <feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#38BDF8" flood-opacity="0.3"/>
+            </filter>
+          </defs>
+
+          ${gridLines}
+          ${yLabels}
+          ${xLabels}
+
+          <!-- WTI Line (Blue) -->
+          ${pathWti ? `
+            <path d="${pathWti}" fill="none" stroke="#38BDF8" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" filter="url(#wti-glow)"/>
+          ` : ''}
+
+          <!-- Brent Line (Yellow) -->
+          <path d="${pathBrent}" fill="none" stroke="#E5A93C" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" filter="url(#brent-glow)"/>
+
+          <!-- Active point indicators -->
+          <circle cx="${curBrent.x.toFixed(1)}" cy="${curBrent.y.toFixed(1)}" r="4.5" fill="#E5A93C" stroke="#0E1726" stroke-width="2"/>
+          ${rawWti.length ? `
+            <circle cx="${curWti.x.toFixed(1)}" cy="${curWti.y.toFixed(1)}" r="4.5" fill="#38BDF8" stroke="#0E1726" stroke-width="2"/>
+          ` : ''}
+        </svg>
+
+        <!-- Chart Legend Center -->
+        <div class="overview-chart-legend">
+          <span class="legend-line-item"><span class="legend-line-indicator" style="background:#E5A93C"></span> Brent</span>
+          <span class="legend-line-item"><span class="legend-line-indicator" style="background:#38BDF8"></span> WTI</span>
+        </div>
+
+        <!-- Chart Footer -->
+        <div class="overview-chart-footer">
+          <div>Nguồn: Yahoo Finance · Brent 07:44 16/11/2026 · WTI 07:48 16/11/2026</div>
+          <div style="cursor:pointer;color:var(--accent-teal);display:flex;align-items:center;gap:4px" data-action="nav-market-detail" data-inst-id="brent_futures">
+            <span>⤢</span> Datapoint
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  /* TRANG 1: TỔNG QUAN THỊ TRƯỜNG (COMPACT VIBE DASHBOARD WITH BẢNG GIÁ NHANH) */
   function renderOverviewPage() {
     const canRestricted = canSeeRestricted();
-    
-    let list = D.instruments;
-    if (state.overviewTab === 'priority') list = list.filter(i => i.isPriority);
-    else if (state.overviewTab === 'crude') list = list.filter(i => i.subgroup === 'Dầu thô');
-    else if (state.overviewTab === 'products') list = list.filter(i => i.subgroup === 'Sản phẩm lọc dầu');
-    else if (state.overviewTab === 'crack') list = list.filter(i => i.subgroup === 'Crack Spread');
-    else if (state.overviewTab === 'ops') list = list.filter(i => i.subgroup === 'Vận hành & Tồn kho');
-    else if (state.overviewTab === 'fx') list = list.filter(i => i.subgroup === 'Tỷ giá');
 
-    const priorityItems = list.filter(i => i.isPriority);
-    const referenceItems = list.filter(i => !i.isPriority);
+    // 6 instruments for top compact ticker strip
+    const brent = D.instruments.find(i => i.id === 'brent_futures') || D.instruments[0];
+    const wti = D.instruments.find(i => i.id === 'wti_futures') || D.instruments[1];
+    const gasoline = D.instruments.find(i => i.id === 'ron95_physical') || D.instruments[2];
+    const dxy = D.instruments.find(i => i.id === 'dxy') || D.instruments[3];
+    const usdvnd = D.instruments.find(i => i.id === 'usd_vnd') || D.instruments[4];
+    const crack321 = D.instruments.find(i => i.id === 'crack_321') || D.instruments[5];
+
+    const tickerItems = [
+      { id: brent.id, symbol: 'BRENT', value: 95.41, unit: 'USD/thùng', decimals: 2, pct: 4.28, meta: 'Delayed · 07:44 16/11/2026' },
+      { id: wti.id, symbol: 'WTI', value: 88.36, unit: 'USD/thùng', decimals: 2, pct: 2.70, meta: 'Delayed · Yahoo Finance' },
+      { id: gasoline.id, symbol: 'RBOB GASOLINE', value: 2.5936, unit: 'USD/gal', decimals: 4, pct: -0.58, meta: 'Delayed · Yahoo Finance' },
+      { id: dxy.id, symbol: 'DXY', value: 103.43, unit: 'điểm', decimals: 2, pct: 1.17, meta: 'Delayed · Yahoo Finance' },
+      { id: usdvnd.id, symbol: 'USD/VND', value: 25711, unit: 'VND', decimals: 0, pct: 0.79, meta: 'Delayed · Yahoo Finance' },
+      { id: crack321.id, symbol: 'CRACK 3-2-1', value: 37.22, unit: 'USD/thùng', decimals: 2, pct: 2.16, meta: 'Tóm tắt 07:57 16/11/2026' }
+    ];
+
+    // 10 instruments for "Bảng giá nhanh" table
+    const quickTableItems = [
+      { id: 'brent_futures', name: 'Brent', source: 'Delayed · Yahoo Finance', value: 95.41, unit: 'USD/thùng', decimals: 2, pct: 4.28 },
+      { id: 'wti_futures', name: 'WTI', source: 'Delayed · Yahoo Finance', value: 88.36, unit: 'USD/thùng', decimals: 2, pct: 2.70 },
+      { id: 'ron95_physical', name: 'Gasoline', source: 'Delayed · Yahoo Finance', value: 2.59, unit: 'USD/gallon', decimals: 2, pct: -0.58 },
+      { id: 'diesel_physical', name: 'Diesel/ULSD', source: 'Delayed · Yahoo Finance', value: 4.29, unit: 'USD/gallon', decimals: 2, pct: 3.76 },
+      { id: 'wti_spot', name: 'WTI Spot', source: 'EOD · FRED - St. Louis Fed', value: 89.62, unit: 'USD/thùng', decimals: 2, pct: 0.00 },
+      { id: 'brent_physical', name: 'Brent Physical', source: 'Manual · BSR Trading Desk', value: 92.14, unit: 'USD/thùng', decimals: 2, pct: 2.20, isRestricted: true },
+      { id: 'retail_gasoline', name: 'Xăng bán lẻ Mỹ', source: 'EOD · FRED - St. Louis Fed', value: 4.00, unit: 'USD/gallon', decimals: 2, pct: -3.80 },
+      { id: 'dxy', name: 'DXY', source: 'Delayed · Yahoo Finance', value: 103.43, unit: 'điểm', decimals: 2, pct: 1.17 },
+      { id: 'usd_vnd', name: 'USD/VND', source: 'Delayed · Yahoo Finance', value: 25711, unit: 'VNĐ', decimals: 0, pct: 0.79 },
+      { id: 'eur_usd', name: 'EUR/USD', source: 'Delayed · Yahoo Finance', value: 1.10, unit: 'USD', decimals: 2, pct: -1.74 }
+    ];
+
+    const activeInstId = state.activeOverviewInstrument || 'brent_futures';
+    const activeInst = D.instruments.find(i => i.id === activeInstId) || brent;
+    const canViewActive = activeInst ? (activeInst.classification !== 'Restricted' || canRestricted) : true;
 
     const morning = D.morningDigest;
     const pulse = D.livePulse;
 
-    // Active instrument for In-Place Chart
-    const activeInstId = state.activeOverviewInstrument || 'brent_physical';
-    const activeInst = D.instruments.find(i => i.id === activeInstId) || D.instruments[0];
-    const canViewActive = activeInst.classification !== 'Restricted' || canRestricted;
-
     return `
-      <!-- TẦNG 1: BẢNG CHỈ SỐ THỊ TRƯỜNG ƯU TIÊN & KHUNG BIỂU ĐỒ XEM NHANH TẠI CHỖ -->
-      <section style="margin-bottom: 24px;">
-        <div class="overview-tab-bar">
-          <div class="filter-tabs-pill">
-            <button class="pill-btn ${state.overviewTab === 'all' ? 'active' : ''}" data-action="set-overview-tab" data-tab="all">Tất cả chỉ số</button>
-            <button class="pill-btn ${state.overviewTab === 'priority' ? 'active' : ''}" data-action="set-overview-tab" data-tab="priority">⭐ Ưu tiên BSR & Physical</button>
-            <button class="pill-btn ${state.overviewTab === 'crude' ? 'active' : ''}" data-action="set-overview-tab" data-tab="crude">Dầu thô</button>
-            <button class="pill-btn ${state.overviewTab === 'products' ? 'active' : ''}" data-action="set-overview-tab" data-tab="products">Sản phẩm lọc dầu</button>
-            <button class="pill-btn ${state.overviewTab === 'crack' ? 'active' : ''}" data-action="set-overview-tab" data-tab="crack">Crack Spread</button>
-            <button class="pill-btn ${state.overviewTab === 'ops' ? 'active' : ''}" data-action="set-overview-tab" data-tab="ops">Vận hành & Tồn kho</button>
-            <button class="pill-btn ${state.overviewTab === 'fx' ? 'active' : ''}" data-action="set-overview-tab" data-tab="fx">Tỷ giá</button>
+      <div class="overview-container">
+        <!-- HEADER ROW: TIÊU ĐỀ & HÀNH ĐỘNG NHANH -->
+        <div class="overview-head-bar">
+          <div>
+            <div class="overview-eyebrow">MARKET OVERVIEW</div>
+            <h1 class="overview-title">Tổng quan thị trường</h1>
+            <div class="overview-subtitle">Ảnh chụp lúc: 07:57 16/11/2026 · 10 chỉ số · 180 tin trong 48 giờ</div>
           </div>
-          <button class="btn btn-primary" data-action="open-drawer" data-drawer-type="physical_entry">
-            ${ico('plus')} + Nhập nhanh dữ liệu BSR / Physical
-          </button>
+          <div class="overview-actions-wrap">
+            <div class="auto-refresh-pill">
+              <span style="font-size:12px">🕒</span> Tự động làm mới 90 giây
+            </div>
+            <button class="btn btn-outline btn-sm" onclick="window.location.reload()" title="Làm mới dữ liệu">
+              ${ico('refresh', 12)} Làm mới
+            </button>
+            <button class="btn btn-primary btn-sm" data-action="open-drawer" data-drawer-type="physical_entry">
+              ${ico('plus')} + Nhập nhanh BSR
+            </button>
+          </div>
         </div>
 
-        <!-- DẢI 1: NHÓM ƯU TIÊN BSR (Thẻ lớn, viền nhấn) -->
-        <div class="section-subhead">
-          <span>DẢI 1 — NHÓM CHỈ SỐ CỐT LÕI BSR & GIÁ PHYSICAL (ƯU TIÊN HÀNG ĐẦU)</span>
-        </div>
-        <div class="snapshot-grid-priority">
-          ${priorityItems.map(item => {
-            const isLocked = item.classification === 'Restricted' && !canRestricted;
-            if (isLocked) {
-              return `
-                <div class="metric-card-locked">
-                  <div class="locked-icon-wrap">${ico('lock', 18)}</div>
-                  <div class="locked-title">${esc(item.name)}</div>
-                  <div class="locked-desc">Yêu cầu quyền truy cập dữ liệu Mật (Restricted)</div>
-                  <span class="badge badge-restricted" style="margin-top:8px">Đã ẩn số liệu</span>
-                </div>
-              `;
-            }
+        <!-- 6 THẺ CHỈ SỐ RÚT GỌN (TICKER STRIP: KHÔNG CÓ BIỂU ĐỒ NHỎ, GỌN GÀNG, CLICK ĐỂ MỞ BIỂU ĐỒ) -->
+        <div class="overview-ticker-strip">
+          ${tickerItems.map(item => {
+            const isPos = item.pct > 0;
+            const isNeg = item.pct < 0;
+            const pillClass = isPos ? 'pos' : (isNeg ? 'neg' : 'neutral');
+            const sign = isPos ? '+' : '';
             const isActive = item.id === activeInstId;
             return `
-              <div class="card card-priority ${isActive ? 'active-instrument' : ''}" data-action="select-overview-instrument" data-inst-id="${item.id}" style="cursor:pointer" title="Bấm để xem biểu đồ chi tiết tại chỗ bên dưới">
-                <div class="metric-card-top">
-                  <div>
-                    <div class="metric-card-name">${esc(item.name)}</div>
-                    <div class="metric-card-meta">${esc(item.source)} · ${esc(item.dataStatus)} · ${esc(item.marketTime)}</div>
-                  </div>
-                  ${item.classification === 'Restricted' ? `<span class="badge badge-restricted">${ico('lock', 10)} Mật 🔒</span>` : ''}
-                  ${item.priceType === 'Nội bộ' ? `<span class="badge badge-manual">BSR Nội bộ</span>` : ''}
-                  ${item.priceType === 'Tính toán' ? `<span class="badge badge-ai-summary">Công thức BSR</span>` : ''}
+              <div class="compact-ticker-card ${isActive ? 'active-instrument' : ''}" data-action="select-overview-instrument" data-inst-id="${item.id}" title="Bấm để xem biểu đồ chi tiết bên dưới">
+                <div class="ticker-card-top">
+                  <span class="ticker-symbol">${esc(item.symbol)}</span>
+                  <span class="ticker-pill ${pillClass}">${sign}${item.pct.toFixed(2).replace('.', ',')}%</span>
                 </div>
-                <div class="metric-card-value-row">
-                  <div>
-                    <span class="metric-card-value">${fmtNum(item.value, item.decimals)}</span>
-                    <span class="metric-card-unit">${esc(item.unit)}</span>
-                  </div>
-                  <div class="metric-card-change ${item.change >= 0 ? 'pos' : 'neg'}">
-                    ${fmtSigned(item.change, item.decimals)} (${fmtPct(item.pct)})
-                  </div>
+                <div class="ticker-value-row">
+                  <span class="ticker-value">${fmtNum(item.value, item.decimals)}</span>
+                  <span class="ticker-unit">${esc(item.unit)}</span>
                 </div>
-                ${renderSparklineSvg(item.spark, item.change >= 0, 36)}
+                <div class="ticker-meta">${esc(item.meta)}</div>
               </div>
             `;
           }).join('')}
         </div>
 
-        <!-- DẢI 2: NHÓM THAM CHIẾU THỊ TRƯỜNG -->
-        ${referenceItems.length ? `
-          <div class="section-subhead" style="margin-top: 14px;">
-            <span>DẢI 2 — NHÓM THAM CHIẾU THỊ TRƯỜNG & VĨ MÔ (FUTURES & TỶ GIÁ)</span>
-          </div>
-          <div class="snapshot-grid-reference">
-            ${referenceItems.map(item => {
-              const isActive = item.id === activeInstId;
-              return `
-                <div class="card ${isActive ? 'active-instrument' : ''}" data-action="select-overview-instrument" data-inst-id="${item.id}" style="cursor:pointer" title="Bấm để xem biểu đồ chi tiết tại chỗ bên dưới">
-                  <div class="metric-card-top">
-                    <div>
-                      <div class="metric-card-name" style="font-size:12.5px">${esc(item.name)}</div>
-                      <div class="metric-card-meta">${esc(item.source)} · ${esc(item.dataStatus)}</div>
-                    </div>
-                    <span class="badge badge-source">${esc(item.priceType)}</span>
-                  </div>
-                  <div class="metric-card-value-row">
-                    <div>
-                      <span class="metric-card-value" style="font-size:20px">${fmtNum(item.value, item.decimals)}</span>
-                      <span class="metric-card-unit">${esc(item.unit)}</span>
-                    </div>
-                    <div class="metric-card-change ${item.change >= 0 ? 'pos' : 'neg'}">
-                      ${fmtSigned(item.change, item.decimals)} (${fmtPct(item.pct)})
-                    </div>
-                  </div>
-                  ${renderSparklineSvg(item.spark, item.change >= 0, 32)}
-                </div>
-              `;
-            }).join('')}
-          </div>
-        ` : ''}
-
-        <!-- KHUNG BIỂU ĐỒ XEM NHANH TẠI CHỖ (IN-PLACE EXPANDABLE CHART) -->
-        <div class="inplace-chart-panel" id="inplace-chart-panel">
-          <div class="inplace-chart-header">
-            <div class="inplace-chart-title-wrap">
-              <span style="font-size:18px">📈</span>
-              <div>
-                <div class="inplace-chart-title">${esc(activeInst.name)} — Biểu đồ Xu hướng Tại chỗ</div>
-                <div style="font-size:11.5px;color:var(--text-muted);display:flex;align-items:center;gap:8px;margin-top:2px">
-                  <span>Nguồn: <strong>${esc(activeInst.source)}</strong></span>
-                  <span>·</span>
-                  <span>Cập nhật: ${esc(activeInst.marketTime)}</span>
-                  <span>·</span>
-                  <span class="badge ${activeInst.classification === 'Restricted' ? 'badge-restricted' : 'badge-source'}">${esc(activeInst.priceType)}</span>
-                </div>
-              </div>
-            </div>
-
-            <div class="chart-controls-group">
-              <div class="chart-range-pills">
-                ${['1D', '1W', '1M', '3M', '1Y'].map(r => `
-                  <button class="chart-range-btn ${state.overviewChartRange === r ? 'active' : ''}" data-action="set-overview-range" data-range="${r}">${r}</button>
-                `).join('')}
-              </div>
-              <button class="btn btn-outline btn-sm" data-action="nav-market-detail" data-inst-id="${activeInst.id}" style="color:var(--accent-teal);border-color:var(--accent-teal)">
-                Xem chi tiết & So sánh đa trục (Market Data) ↗
-              </button>
-            </div>
-          </div>
-
-          ${canViewActive ? `
-            ${renderCleanChartSvg({
-              series: activeInst.series,
-              name1: activeInst.name,
-              unit1: activeInst.unit,
-              decimals1: activeInst.decimals,
-              range: state.overviewChartRange,
-              color1: '#007A87',
-              height: 220,
-              chartId: 'inplace-overview-chart'
-            })}
-            <div class="inplace-summary-row">
-              <div class="inplace-stat-card">
-                <span class="inplace-stat-label">Giá hiện tại</span>
-                <span class="inplace-stat-val" style="color:var(--accent-teal)">${fmtNum(activeInst.value, activeInst.decimals)} ${esc(activeInst.unit)}</span>
-              </div>
-              <div class="inplace-stat-card">
-                <span class="inplace-stat-label">Giá cao nhất kỳ (${state.overviewChartRange})</span>
-                <span class="inplace-stat-val">${fmtNum(Math.max(...(activeInst.series || []).slice(-30).map(d => d.value)), activeInst.decimals)} ${esc(activeInst.unit)}</span>
-              </div>
-              <div class="inplace-stat-card">
-                <span class="inplace-stat-label">Giá thấp nhất kỳ (${state.overviewChartRange})</span>
-                <span class="inplace-stat-val">${fmtNum(Math.min(...(activeInst.series || []).slice(-30).map(d => d.value)), activeInst.decimals)} ${esc(activeInst.unit)}</span>
-              </div>
-              <div class="inplace-stat-card">
-                <span class="inplace-stat-label">Biến động so với phiên trước</span>
-                <span class="inplace-stat-val ${activeInst.change >= 0 ? 'pos' : 'neg'}" style="color:${activeInst.change >= 0 ? 'var(--pos-green)' : 'var(--neg-red)'}">
-                  ${fmtSigned(activeInst.change, activeInst.decimals)} (${fmtPct(activeInst.pct)})
-                </span>
-              </div>
-            </div>
-          ` : `
-            <div class="metric-card-locked" style="min-height:200px">
-              <div class="locked-icon-wrap">${ico('lock', 22)}</div>
-              <div class="locked-title">${esc(activeInst.name)}</div>
-              <div class="locked-desc">Biểu đồ chỉ số này thuộc phân loại Mật (Restricted). Chuyển sang vai trò Lãnh đạo hoặc Đội MI để xem dữ liệu.</div>
-            </div>
-          `}
-        </div>
-      </section>
-
-      <!-- TẦNG 2: BẢN TIN TỔNG HỢP NGÀY & COMPONENT AI CHAT NHÚNG -->
-      <section style="margin-bottom: 28px;">
-        <div class="grid-12">
-          <!-- Cột trái 7 cột -->
-          <div class="col-7">
-            <div class="digest-box">
-              <div class="digest-header">
+        <!-- BỐ CỤC 2 CỘT CHÍNH: TẬN DỤNG TỐI ĐA CHIỀU NGANG -->
+        <div class="overview-hero-grid">
+          <!-- CỘT TRÁI (62%): BIỂU ĐỒ CHÍNH & TÓM TẮT AI BRIEFING -->
+          <div class="overview-left-col">
+            <!-- KHUNG BIỂU ĐỒ CHI TIẾT TẠI CHỖ -->
+            <div class="overview-chart-box" id="inplace-chart-panel">
+              <div class="overview-chart-header">
                 <div>
-                  <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
-                    <span class="badge badge-source">Nguồn: Platts/Reuters nhập sáng</span>
-                    <span style="font-size:11px;color:var(--text-muted)">${esc(morning.time)} · Đội MI BSR</span>
+                  <div class="overview-chart-title">
+                    ${state.overviewCompareDual ? 'So sánh Brent & WTI - Biểu đồ Đa trục' : `${esc(activeInst.name)} — Biểu đồ Xu hướng`}
                   </div>
-                  <h2 class="digest-title">${esc(morning.title)}</h2>
+                  <div class="overview-chart-sub">
+                    Nguồn: ${esc(activeInst.source || 'Yahoo Finance')}. Đường giá đã điều chỉnh theo dữ liệu thực tế.
+                  </div>
                 </div>
-                <select class="form-control-select" style="width:160px;font-size:11.5px">
-                  <option selected>Phiên 14/11 Sáng</option>
-                  <option>Phiên 13/11 Chiều</option>
-                  <option>Phiên 13/11 Sáng</option>
-                </select>
+                <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+                  <button class="btn btn-outline btn-sm ${state.overviewCompareDual ? 'active' : ''}" data-action="toggle-overview-dual" style="font-size:11px;padding:3px 8px;border-color:var(--accent-teal);color:var(--accent-teal)" title="Bật/tắt so sánh 2 đường Brent & WTI">
+                    ${state.overviewCompareDual ? '✕ Chỉ xem 1 đường' : '⚡ So sánh Brent & WTI'}
+                  </button>
+                  <div class="chart-range-pills" style="margin:0">
+                    ${['1D', '1W', '1M', '3M', '1Y'].map(r => `
+                      <button class="chart-range-btn ${state.overviewChartRange === r ? 'active' : ''}" data-action="set-overview-range" data-range="${r}">${r}</button>
+                    `).join('')}
+                  </div>
+                  <button class="btn-link" data-action="nav-market-detail" data-inst-id="${activeInst.id}" style="color:var(--accent-teal);font-size:12px;font-weight:600;display:flex;align-items:center;gap:4px">
+                    Mở dữ liệu ↗
+                  </button>
+                </div>
               </div>
 
-              <div class="digest-body">
-                <p>
-                  ${esc(morning.executiveSummary)}
-                </p>
-                <div style="margin: 12px 0; padding: 10px 14px; background: var(--bg-card-subtle); border-radius: 6px; border-left: 3px solid var(--accent-teal);">
-                  <strong style="color:var(--text-main); font-size:12px;">Nhận định chuyên viên MI:</strong>
-                  <span style="font-size:12px; color:var(--text-sub); display:block; margin-top:2px;">${esc(morning.analystNote)}</span>
+              ${canViewActive ? `
+                ${state.overviewCompareDual ? `
+                  ${renderOverviewDualChart({
+                    brentInst: brent,
+                    wtiInst: wti,
+                    range: state.overviewChartRange || '1M',
+                    height: 210
+                  })}
+                ` : `
+                  ${renderCleanChartSvg({
+                    series: activeInst.series,
+                    name1: activeInst.name,
+                    unit1: activeInst.unit,
+                    decimals1: activeInst.decimals,
+                    range: state.overviewChartRange || '1M',
+                    color1: activeInst.id === 'brent_futures' ? '#F59E0B' : (activeInst.id === 'wti_futures' ? '#38BDF8' : '#00E5FF'),
+                    height: 210,
+                    chartId: 'inplace-overview-chart'
+                  })}
+                `}
+
+                <!-- Thanh tóm tắt 4 chỉ số thống kê gọn gàng -->
+                <div class="inplace-summary-row" style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border-card-subtle)">
+                  <div class="inplace-stat-card">
+                    <span class="inplace-stat-label">Giá hiện tại</span>
+                    <span class="inplace-stat-val" style="color:var(--accent-teal)">${fmtNum(activeInst.value, activeInst.decimals)} ${esc(activeInst.unit)}</span>
+                  </div>
+                  <div class="inplace-stat-card">
+                    <span class="inplace-stat-label">Cao nhất kỳ</span>
+                    <span class="inplace-stat-val">${fmtNum(Math.max(...(activeInst.series || []).slice(-30).map(d => d.value)), activeInst.decimals)} ${esc(activeInst.unit)}</span>
+                  </div>
+                  <div class="inplace-stat-card">
+                    <span class="inplace-stat-label">Thấp nhất kỳ</span>
+                    <span class="inplace-stat-val">${fmtNum(Math.min(...(activeInst.series || []).slice(-30).map(d => d.value)), activeInst.decimals)} ${esc(activeInst.unit)}</span>
+                  </div>
+                  <div class="inplace-stat-card">
+                    <span class="inplace-stat-label">Biến động phiên</span>
+                    <span class="inplace-stat-val ${activeInst.change >= 0 ? 'pos' : 'neg'}" style="color:${activeInst.change >= 0 ? 'var(--pos-green)' : 'var(--neg-red)'}">
+                      ${activeInst.change >= 0 ? '+' : ''}${fmtSigned(activeInst.change, activeInst.decimals)} (${fmtPct(activeInst.pct)})
+                    </span>
+                  </div>
                 </div>
+              ` : `
+                <div class="metric-card-locked" style="min-height:180px">
+                  <div class="locked-icon-wrap">${ico('lock', 20)}</div>
+                  <div class="locked-title">${esc(activeInst.name)}</div>
+                  <div class="locked-desc">Biểu đồ chỉ số này thuộc phân loại Mật (Restricted). Chuyển sang vai trò Lãnh đạo hoặc Đội MI để xem dữ liệu.</div>
+                </div>
+              `}
+            </div>
+
+            <!-- AI MARKET BRIEFING -->
+            <div class="overview-briefing-box">
+              <div class="briefing-head">
+                <div class="briefing-title-wrap">
+                  <span style="font-size:15px">✨</span>
+                  <div>
+                    <span class="briefing-title">AI Market Briefing</span>
+                    <span class="briefing-sub" style="margin-left:8px">Phiên bản v2 - dữ liệu cắt lúc 06:15 16/11/2026</span>
+                  </div>
+                </div>
+                <button class="btn btn-outline btn-sm" data-action="refresh-briefing" style="font-size:11px;padding:3px 8px">
+                  ${ico('refresh', 11)} Tạo bản tin mới
+                </button>
               </div>
 
-              <!-- Cập nhật Intraday Real-time Pulse -->
-              <div class="pulse-box">
-                <div class="pulse-head">
-                  <div class="pulse-live-indicator">
-                    <span class="pulse-dot"></span>
-                    <span>AI LIVE PULSE — CẬP NHẬT TRONG NGÀY</span>
-                  </div>
-                  <span style="font-size:10.5px;color:var(--text-muted)">Cập nhật lúc ${esc(pulse.lastUpdated)}</span>
-                </div>
-                <div style="font-size:12px;color:var(--text-sub);line-height:1.45;margin-bottom:8px">
-                  ${esc(pulse.headline)}
-                </div>
-                <div style="display:flex;align-items:center;justify-content:space-between;font-size:11px">
-                  <span class="badge badge-ai-summary">${esc(pulse.sourceBadge)}</span>
-                  <span style="color:var(--text-muted)">Tác động dự kiến: <strong style="color:var(--pos-green)">${esc(pulse.impact)}</strong></span>
-                </div>
+              <div class="briefing-section-head">DIỄN BIẾN 24 GIỜ</div>
+              <ul class="briefing-bullets">
+                <li class="briefing-bullet-item">
+                  <strong>Brent 95,84 USD/thùng</strong> (+4,75%); <strong>WTI 88,56 USD/thùng</strong> (+2,93%).
+                </li>
+                <li class="briefing-bullet-item">
+                  <strong>DXY 103,42 điểm</strong> (+1,17%); <strong>USD/VND 25.711</strong> (+0,51%).
+                </li>
+                <li class="briefing-bullet-item">
+                  <strong>Crack 3-2-1 36,27 USD/thùng</strong>, tính lúc 06:15 16/11/2026.
+                </li>
+              </ul>
+
+              <div class="briefing-footer-note">
+                Nguồn: Yahoo Finance · Platts · BSR Trading Desk
               </div>
             </div>
           </div>
 
-          <!-- Cột phải 5 cột: Embedded Copilot Widget -->
-          <div class="col-5">
-            <div class="copilot-card">
-              <div class="copilot-head">
-                <div class="copilot-brand">
-                  <div class="copilot-icon">${ico('sparkle', 14)}</div>
-                  <span>Trợ lý BSR Copilot</span>
-                </div>
-                <button class="btn btn-outline btn-sm" data-action="nav-page" data-page="assistant" style="font-size:11px">
-                  Mở rộng sang Không gian AI Chat ↗
-                </button>
-              </div>
-
-              <div class="copilot-chat-feed">
-                ${state.copilotResponses.map(r => `
-                  <div class="copilot-msg-user">${esc(r.prompt)}</div>
-                  <div class="copilot-msg-ai">
-                    <div style="display:flex;align-items:center;gap:4px;margin-bottom:4px;font-size:10px;color:var(--text-muted)">
-                      ${ico('sparkle', 10)} <span>Auker AI BSR</span>
-                    </div>
-                    <div style="white-space:pre-line">${esc(r.response)}</div>
-                  </div>
-                `).join('')}
-              </div>
-
-              <div class="copilot-chips-wrap">
-                <button class="copilot-chip" data-action="send-copilot-prompt" data-prompt="Tạo báo cáo nhanh biến động Physical & Crack hôm nay">
-                  📊 Báo cáo biến động Physical & Crack hôm nay
-                </button>
-                <button class="copilot-chip" data-action="send-copilot-prompt" data-prompt="Đánh giá chênh lệch giá Brent Dated vs WTI Futures">
-                  ⚡ Đối chiếu Dated Brent vs WTI
-                </button>
-                <button class="copilot-chip" data-action="send-copilot-prompt" data-prompt="Khuyến nghị điều chỉnh công suất CDU theo Crack Spreads">
-                  🎯 Khuyến nghị công suất CDU
-                </button>
-              </div>
-
-              <form class="copilot-input-bar" id="copilot-form" data-action="submit-copilot">
-                <input type="text" placeholder="Hỏi AI về giá, tồn kho, crack spread..." id="copilot-input">
-                <button type="submit" class="btn btn-primary btn-sm" style="padding:4px 8px">Gửi</button>
-              </form>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <!-- TẦNG 3: TOP 10 TIN TỨC THỊ TRƯỜNG MỚI NHẤT -->
-      <section>
-        <div class="news-feed-card">
-          <div class="news-feed-head">
+          <!-- CỘT PHẢI (38%): BẢNG GIÁ NHANH (QUICK PRICE TABLE) -->
+          <div class="overview-quicktable-box">
             <div>
-              <h2 style="font-size:15px;font-weight:700;color:var(--text-main)">Top 10 Tin tức Thị trường Mới nhất (Hợp nhất theo Thời gian)</h2>
-              <div style="font-size:11.5px;color:var(--text-muted)">Hợp nhất tin nhập sáng từ Platts/Reuters và tin nóng phát sinh trong ngày</div>
-            </div>
-            <div style="display:flex;align-items:center;gap:10px">
-              <div class="filter-tabs-pill">
-                <button class="pill-btn active">Tất cả (10)</button>
-                <button class="pill-btn">Tin nhập sáng</button>
-                <button class="pill-btn">Mới phát sinh</button>
+              <div class="quicktable-header">
+                <div>
+                  <h3 class="quicktable-title">Bảng giá nhanh</h3>
+                  <div class="quicktable-sub">Giá trị mới nhất theo quyền truy cập · Bấm để xem biểu đồ</div>
+                </div>
+                <button class="btn-link" data-action="nav-page" data-page="market_data" style="color:var(--accent-teal);font-size:12px;font-weight:600">
+                  Chi tiết ↗
+                </button>
               </div>
-              <button class="btn btn-outline btn-sm" data-action="open-drawer" data-drawer-type="quick_news">
-                ${ico('plus')} + Thêm tin nhanh
+
+              <table class="quicktable-table">
+                <thead>
+                  <tr>
+                    <th style="text-align:left">CHỈ SỐ</th>
+                    <th style="text-align:right">GIÁ TRỊ</th>
+                    <th style="text-align:right;width:75px">Δ</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${quickTableItems.map(item => {
+                    const isRestrictedAndLocked = item.isRestricted && !canRestricted;
+                    const isPos = item.pct > 0;
+                    const isNeg = item.pct < 0;
+                    const pillClass = isPos ? 'pos' : (isNeg ? 'neg' : 'neutral');
+                    const sign = isPos ? '+' : '';
+                    const isActive = item.id === activeInstId;
+
+                    return `
+                      <tr class="quicktable-row ${isActive ? 'active' : ''}" data-action="select-overview-instrument" data-inst-id="${item.id}" title="Bấm để mở biểu đồ ${esc(item.name)}">
+                        <td>
+                          <div class="qp-name">
+                            ${esc(item.name)}
+                            ${item.isRestricted ? `<span class="badge badge-restricted" style="font-size:9px;padding:1px 4px;margin-left:4px">Mật 🔒</span>` : ''}
+                          </div>
+                          <div class="qp-meta">${esc(item.source)}</div>
+                        </td>
+                        <td style="text-align:right">
+                          ${isRestrictedAndLocked ? `
+                            <span style="font-size:11px;color:var(--text-muted)">Đã ẩn</span>
+                          ` : `
+                            <span class="qp-val">${fmtNum(item.value, item.decimals)}</span>
+                            <span class="qp-unit">${esc(item.unit)}</span>
+                          `}
+                        </td>
+                        <td style="text-align:right">
+                          ${isRestrictedAndLocked ? `
+                            <span class="badge badge-restricted" style="font-size:9.5px">🔒</span>
+                          ` : `
+                            <span class="ticker-pill ${pillClass}">${sign}${item.pct.toFixed(2).replace('.', ',')}%</span>
+                          `}
+                        </td>
+                      </tr>
+                    `;
+                  }).join('')}
+                </tbody>
+              </table>
+            </div>
+
+            <div class="quicktable-footer">
+              <span>10 chỉ số được nhập · Lần nhất vừa xong</span>
+              <button class="btn-link" data-action="open-drawer" data-drawer-type="physical_entry" style="font-size:11px;color:var(--accent-teal)">
+                + Nhập giá mới
               </button>
             </div>
           </div>
+        </div>
 
-          <div>
-            ${D.top10News.map(item => `
-              <div class="news-item-row" data-action="open-news-detail" data-news-id="${item.id}" style="cursor:pointer">
-                <div style="width:110px;flex-shrink:0">
-                  <div style="font-size:11.5px;font-weight:700;font-family:var(--font-mono);color:var(--text-main)">${esc(item.time)}</div>
-                  <span class="badge ${item.originType === 'morning' ? 'badge-source' : 'badge-ai-summary'}" style="margin-top:4px;font-size:9.5px">
-                    ${esc(item.originBadge)}
-                  </span>
+        <!-- TẦNG TIẾP THEO: BẢN TIN SÁNG CHI TIẾT & BSR COPILOT (THIẾT KẾ THU GỌN, TẬN DỤNG DIỆN TÍCH) -->
+        <section style="margin-top: 16px; margin-bottom: 24px;">
+          <div class="grid-12">
+            <!-- Cột trái 7 cột: Morning Digest chi tiết -->
+            <div class="col-7">
+              <div class="digest-box compact-digest">
+                <div class="digest-header">
+                  <div>
+                    <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+                      <span class="badge badge-source">Nguồn: Platts/Reuters nhập sáng</span>
+                      <span style="font-size:11px;color:var(--text-muted)">${esc(morning.time)} · Đội MI BSR</span>
+                    </div>
+                    <h2 class="digest-title" style="font-size:15px">${esc(morning.title)}</h2>
+                  </div>
+                  <select class="form-control-select" style="width:150px;font-size:11px">
+                    <option selected>Phiên 16/11 Sáng</option>
+                    <option>Phiên 15/11 Chiều</option>
+                    <option>Phiên 15/11 Sáng</option>
+                  </select>
                 </div>
-                <div class="news-item-main">
-                  <div class="news-item-title">${esc(item.title)}</div>
-                  <div class="news-item-snippet">${esc(item.summary)}</div>
-                  <div class="news-item-tags">
-                    ${item.duplicateBadge ? `<span class="badge badge-manual">${esc(item.duplicateBadge)}</span>` : ''}
-                    ${item.topics.map(t => `<span class="badge badge-source" style="font-size:9.5px">${esc(t)}</span>`).join('')}
-                    <span style="margin-left:auto;font-size:11px;color:var(--text-muted);font-weight:600">${esc(item.source)}</span>
+
+                <div class="digest-body" style="font-size:12.5px;line-height:1.5">
+                  <p style="margin-bottom:8px">${esc(morning.executiveSummary)}</p>
+                  <div style="margin: 8px 0; padding: 8px 12px; background: var(--bg-card-subtle); border-radius: 6px; border-left: 3px solid var(--accent-teal);">
+                    <strong style="color:var(--text-main); font-size:11.5px;">Nhận định chuyên viên MI:</strong>
+                    <span style="font-size:11.5px; color:var(--text-sub); display:block; margin-top:2px;">${esc(morning.analystNote)}</span>
+                  </div>
+                </div>
+
+                <!-- Cập nhật Intraday Real-time Pulse -->
+                <div class="pulse-box" style="padding:10px 12px;margin-top:10px">
+                  <div class="pulse-head">
+                    <div class="pulse-live-indicator">
+                      <span class="pulse-dot"></span>
+                      <span style="font-size:10px">AI LIVE PULSE — CẬP NHẬT TRONG NGÀY</span>
+                    </div>
+                    <span style="font-size:10px;color:var(--text-muted)">${esc(pulse.lastUpdated)}</span>
+                  </div>
+                  <div style="font-size:11.5px;color:var(--text-sub);line-height:1.4;margin-bottom:6px">
+                    ${esc(pulse.headline)}
+                  </div>
+                  <div style="display:flex;align-items:center;justify-content:space-between;font-size:10.5px">
+                    <span class="badge badge-ai-summary" style="font-size:9.5px">${esc(pulse.sourceBadge)}</span>
+                    <span style="color:var(--text-muted)">Tác động dự kiến: <strong style="color:var(--pos-green)">${esc(pulse.impact)}</strong></span>
                   </div>
                 </div>
               </div>
-            `).join('')}
+            </div>
+
+            <!-- Cột phải 5 cột: Embedded Copilot Widget -->
+            <div class="col-5">
+              <div class="copilot-card compact-copilot">
+                <div class="copilot-head">
+                  <div class="copilot-brand">
+                    <div class="copilot-icon">${ico('sparkle', 14)}</div>
+                    <span style="font-size:13px">Trợ lý BSR Copilot</span>
+                  </div>
+                  <button class="btn btn-outline btn-sm" data-action="nav-page" data-page="assistant" style="font-size:10.5px;padding:3px 7px">
+                    Mở rộng ↗
+                  </button>
+                </div>
+
+                <div class="copilot-chat-feed" style="max-height:140px;overflow-y:auto">
+                  ${state.copilotResponses.map(r => `
+                    <div class="copilot-msg-user" style="font-size:11.5px">${esc(r.prompt)}</div>
+                    <div class="copilot-msg-ai" style="font-size:11.5px">
+                      <div style="display:flex;align-items:center;gap:4px;margin-bottom:2px;font-size:9.5px;color:var(--text-muted)">
+                        ${ico('sparkle', 9)} <span>Auker AI BSR</span>
+                      </div>
+                      <div style="white-space:pre-line">${esc(r.response)}</div>
+                    </div>
+                  `).join('')}
+                </div>
+
+                <div class="copilot-chips-wrap" style="gap:4px;margin:6px 0">
+                  <button class="copilot-chip" data-action="send-copilot-prompt" data-prompt="Tạo báo cáo nhanh biến động Physical & Crack hôm nay" style="font-size:10.5px;padding:3px 7px">
+                    📊 Báo cáo Physical & Crack
+                  </button>
+                  <button class="copilot-chip" data-action="send-copilot-prompt" data-prompt="Đánh giá chênh lệch giá Brent Dated vs WTI Futures" style="font-size:10.5px;padding:3px 7px">
+                    ⚡ Dated Brent vs WTI
+                  </button>
+                </div>
+
+                <form class="copilot-input-bar" id="copilot-form" data-action="submit-copilot" style="padding:4px">
+                  <input type="text" placeholder="Hỏi AI về giá, tồn kho, crack spread..." id="copilot-input" style="font-size:11.5px">
+                  <button type="submit" class="btn btn-primary btn-sm" style="padding:3px 8px;font-size:11px">Gửi</button>
+                </form>
+              </div>
+            </div>
           </div>
-        </div>
-      </section>
+        </section>
+
+        <!-- TẦNG 3: TOP 10 TIN TỨC THỊ TRƯỜNG MỚI NHẤT (THU GỌN) -->
+        <section>
+          <div class="news-feed-card compact-news-feed">
+            <div class="news-feed-head" style="padding:12px 16px">
+              <div>
+                <h2 style="font-size:14px;font-weight:700;color:var(--text-main);margin:0">Top 10 Tin tức Thị trường Mới nhất</h2>
+                <div style="font-size:11px;color:var(--text-muted);margin-top:2px">Hợp nhất tin nhập sáng từ Platts/Reuters và tin nóng trong ngày</div>
+              </div>
+              <div style="display:flex;align-items:center;gap:8px">
+                <div class="filter-tabs-pill">
+                  <button class="pill-btn active" style="font-size:11px;padding:3px 8px">Tất cả (10)</button>
+                  <button class="pill-btn" style="font-size:11px;padding:3px 8px">Tin sáng</button>
+                  <button class="pill-btn" style="font-size:11px;padding:3px 8px">Mới</button>
+                </div>
+                <button class="btn btn-outline btn-sm" data-action="open-drawer" data-drawer-type="quick_news" style="font-size:11px;padding:3px 8px">
+                  ${ico('plus')} + Thêm tin
+                </button>
+              </div>
+            </div>
+
+            <div>
+              ${D.top10News.slice(0, 6).map(item => `
+                <div class="news-item-row compact-news-row" data-action="open-news-detail" data-news-id="${item.id}" style="cursor:pointer;padding:8px 16px">
+                  <div style="width:95px;flex-shrink:0">
+                    <div style="font-size:11px;font-weight:700;font-family:var(--font-mono);color:var(--text-main)">${esc(item.time)}</div>
+                    <span class="badge ${item.originType === 'morning' ? 'badge-source' : 'badge-ai-summary'}" style="margin-top:2px;font-size:9px">
+                      ${esc(item.originBadge)}
+                    </span>
+                  </div>
+                  <div class="news-item-main">
+                    <div class="news-item-title" style="font-size:12.5px">${esc(item.title)}</div>
+                    <div class="news-item-snippet" style="font-size:11.5px">${esc(item.summary)}</div>
+                    <div class="news-item-tags" style="margin-top:4px">
+                      ${item.duplicateBadge ? `<span class="badge badge-manual" style="font-size:9px">${esc(item.duplicateBadge)}</span>` : ''}
+                      ${item.topics.map(t => `<span class="badge badge-source" style="font-size:9px">${esc(t)}</span>`).join('')}
+                      <span style="margin-left:auto;font-size:10.5px;color:var(--text-muted);font-weight:600">${esc(item.source)}</span>
+                    </div>
+                  </div>
+                </div>
+              `).join('')}
+            </div>
+          </div>
+        </section>
+      </div>
     `;
   }
-  /* TRANG 2: DỮ LIỆU THỊ TRƯỜNG CHUYÊN SÂU */
+
+  /* TRANG 2: DỮ LIỆU THỊ TRƯỜNG CHUYÊN SÂU (COMPACT & BẢNG GIÁ NHANH ĐỐI CHIẾU) */
   function renderMarketDataPage() {
     const canRestricted = canSeeRestricted();
     const instList = D.instruments;
-    const activeInst = D.instruments.find(i => i.id === state.activeChartInstrument) || D.instruments[0];
-    const compareInst = D.instruments.find(i => i.id === state.selectedInstruments.find(id => id !== state.activeChartInstrument));
+
+    const activeInstId = state.activeChartInstrument || state.selectedInstruments[0] || 'brent_futures';
+    const activeInst = D.instruments.find(i => i.id === activeInstId) || D.instruments[0];
+    const compareInstId = state.selectedInstruments.find(id => id !== activeInst.id);
+    const compareInst = compareInstId ? D.instruments.find(i => i.id === compareInstId) : null;
+
+    const priorityItems = instList.filter(i => i.isPriority || ['brent_futures', 'wti_futures', 'ron95_physical', 'diesel_physical', 'crack_321', 'dxy'].includes(i.id)).slice(0, 6);
 
     return `
-      <!-- 2.1 THANH BỘ LỌC & LƯỚI THẺ SPARKLINE -->
-      <section style="margin-bottom:20px">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:12px">
+      <div class="market-data-container">
+        <!-- 2.1 HEADER: TIÊU ĐỀ & HÀNH ĐỘNG -->
+        <div class="overview-head-bar">
           <div>
-            <h1 style="font-size:18px;font-weight:800;color:var(--text-main)">2. Dữ liệu Thị trường Chuyên sâu</h1>
-            <div style="font-size:11.5px;color:var(--text-muted)">Biểu đồ chuỗi thời gian đa trục độ phân giải cao, ghim sự kiện và phân tích tương quan</div>
+            <div class="overview-eyebrow">MARKET INTELLIGENCE LEDGER</div>
+            <h1 class="overview-title" style="font-size:22px">2. Dữ liệu Thị trường Chuyên sâu</h1>
+            <div class="overview-subtitle">Phân tích chuỗi thời gian đa trục độ phân giải cao, đối chiếu chỉ số và sổ cái lịch sử</div>
           </div>
-          <div style="display:flex;gap:10px">
+          <div class="overview-actions-wrap">
             ${getRole().admin ? `
-              <button class="btn btn-primary" data-action="open-drawer" data-drawer-type="physical_entry">
-                + Nhập giá Physical / Dữ liệu BSR
+              <button class="btn btn-primary btn-sm" data-action="open-drawer" data-drawer-type="physical_entry">
+                ${ico('plus')} + Nhập giá Physical
               </button>
             ` : ''}
-            <button class="btn btn-secondary" data-action="show-crack-formula-popover">
-              Xem công thức Crack Spread
+            <button class="btn btn-secondary btn-sm" data-action="show-crack-formula-popover" style="font-size:11.5px">
+              Công thức Crack Spread
             </button>
-            <button class="btn btn-secondary" data-action="export-market-data">
-              ${ico('download')} Xuất dữ liệu (Excel/CSV)
+            <button class="btn btn-secondary btn-sm" data-action="export-market-data" style="font-size:11.5px">
+              ${ico('download')} Xuất dữ liệu
             </button>
           </div>
         </div>
 
-        <div class="section-subhead">
-          <span>NHÓM PHYSICAL & NỘI BỘ BSR (CHỌN ĐỂ ĐỐI CHIẾU TRÊN BIỂU ĐỒ)</span>
+        <!-- 2.2 THANH CHỈ SỐ NHANH (THU GỌN, KHÔNG CÓ BIỂU ĐỒ NHỎ, BẤM ĐỂ CHỌN ĐỐI CHIẾU) -->
+        <div class="section-subhead" style="margin-bottom:8px">
+          <span>CHỈ SỐ TRỌNG YẾU BSR & THỊ TRƯỜNG (BẤM ĐỂ THAY ĐỔI / ĐỐI CHIẾU TRÊN BIỂU ĐỒ)</span>
         </div>
-        <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(240px, 1fr));gap:12px;margin-bottom:20px">
-          ${instList.filter(i => i.isPriority).map(item => {
+        <div class="overview-ticker-strip" style="margin-bottom:18px">
+          ${priorityItems.map(item => {
             const isLocked = item.classification === 'Restricted' && !canRestricted;
             const isChecked = state.selectedInstruments.includes(item.id);
+            const isActive = item.id === activeInst.id;
+            const isPos = item.pct >= 0;
+            const pillClass = isPos ? 'pos' : 'neg';
+            const sign = isPos ? '+' : '';
+
             if (isLocked) {
               return `
-                <div class="metric-card-locked" style="min-height:90px;padding:12px">
-                  <div style="display:flex;align-items:center;gap:6px">
-                    ${ico('lock', 14)} <strong style="font-size:12px;color:var(--badge-restricted-text)">${esc(item.name)}</strong>
+                <div class="compact-ticker-card compact-locked">
+                  <div class="ticker-card-top">
+                    <span class="ticker-symbol">${esc(item.short || item.name)}</span>
+                    <span class="badge badge-restricted" style="font-size:9px">🔒 Mật</span>
                   </div>
-                  <span class="badge badge-restricted" style="margin-top:6px;font-size:9.5px">Khóa (Yêu cầu quyền Mật)</span>
+                  <div style="font-size:11px;color:var(--text-muted);margin-top:6px">Đã ẩn số liệu</div>
                 </div>
               `;
             }
+
             return `
-              <div class="card card-priority" style="padding:12px;cursor:pointer;border-color:${isChecked ? '#00E5FF' : 'var(--border-card)'}" data-action="toggle-instrument-pick" data-inst-id="${item.id}">
-                <div style="display:flex;justify-content:space-between;align-items:center">
-                  <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-weight:700;font-size:12px;color:var(--text-main)">
-                    <input type="checkbox" ${isChecked ? 'checked' : ''} style="accent-color:#00E5FF">
-                    ${esc(item.short)}
+              <div class="compact-ticker-card ${isActive ? 'active-instrument' : ''}" style="border-color:${isChecked ? 'var(--accent-teal)' : 'var(--border-card)'}" data-action="toggle-instrument-pick" data-inst-id="${item.id}" title="Bấm để đối chiếu chỉ số này">
+                <div class="ticker-card-top">
+                  <label style="display:flex;align-items:center;gap:6px;cursor:pointer;margin:0" onclick="event.stopPropagation()">
+                    <input type="checkbox" ${isChecked ? 'checked' : ''} data-action="toggle-instrument-pick" data-inst-id="${item.id}" style="accent-color:var(--accent-teal);cursor:pointer">
+                    <span class="ticker-symbol" style="color:var(--text-main)">${esc(item.short || item.name)}</span>
                   </label>
-                  <span class="badge badge-restricted" style="font-size:9.5px">Mật 🔒</span>
+                  <span class="ticker-pill ${pillClass}">${sign}${item.pct.toFixed(2).replace('.', ',')}%</span>
                 </div>
-                <div style="display:flex;justify-content:space-between;align-items:baseline;margin-top:6px">
-                  <span style="font-size:17px;font-weight:800;font-family:var(--font-mono)">${fmtNum(item.value, item.decimals)} <span style="font-size:10px;font-weight:400;color:var(--text-muted)">${esc(item.unit)}</span></span>
-                  <span class="metric-card-change ${item.change >= 0 ? 'pos' : 'neg'}" style="font-size:11px">${fmtSigned(item.change, item.decimals)}</span>
+                <div class="ticker-value-row">
+                  <span class="ticker-value">${fmtNum(item.value, item.decimals)}</span>
+                  <span class="ticker-unit">${esc(item.unit)}</span>
                 </div>
-                ${renderSparklineSvg(item.spark, item.change >= 0, 30)}
+                <div class="ticker-meta">${esc(item.source)} · ${esc(item.dataStatus)}</div>
               </div>
             `;
           }).join('')}
         </div>
-      </section>
 
-      <!-- 2.2 BIỂU ĐỒ CHUỖI THỜI GIAN ĐA TRỤC (HIGH-TECH MULTI-AXIS CHART) -->
-      <section class="chart-multiaxis-box">
-        <div class="chart-ctrl-row">
-          <div>
-            <h2 style="font-size:15px;font-weight:800;color:var(--text-main)">
-              Biểu đồ Phân tích Đa trục: <span style="color:#00E5FF">${esc(activeInst.name)}</span> ${compareInst ? ` vs <span style="color:#F59E0B">${esc(compareInst.name)}</span>` : ''}
-            </h2>
-            <div style="font-size:11px;color:var(--text-muted)">
-              Trục Trái: ${esc(activeInst.unit)} | ${compareInst ? `Trục Phải: ${esc(compareInst.unit)}` : 'Chưa chọn chỉ số thứ 2'}
+        <!-- 2.3 BỐ CỤC 2 CỘT HERO: BIỂU ĐỒ ĐA TRỤC (65%) & BẢNG GIÁ NHANH ĐỐI CHIẾU (35%) -->
+        <div class="overview-hero-grid" style="margin-bottom:24px">
+          <!-- CỘT TRÁI (65%): BIỂU ĐỒ PHÂN TÍCH ĐA TRỤC -->
+          <div class="overview-left-col">
+            <div class="overview-chart-box">
+              <div class="overview-chart-header">
+                <div>
+                  <div class="overview-chart-title" style="display:flex;align-items:center;gap:8px">
+                    <span>Biểu đồ Phân tích Đa trục:</span>
+                    <span style="color:var(--accent-teal)">${esc(activeInst.name)}</span>
+                    ${compareInst ? `<span style="color:var(--text-muted);font-weight:400">vs</span> <span style="color:var(--accent-gold)">${esc(compareInst.name)}</span>` : ''}
+                  </div>
+                  <div class="overview-chart-sub">
+                    Trục Trái: <strong style="color:var(--accent-teal)">${esc(activeInst.unit)}</strong>
+                    ${compareInst ? ` · Trục Phải: <strong style="color:var(--accent-gold)">${esc(compareInst.unit)}</strong>` : ' · (Chọn thêm chỉ số bên phải để đối chiếu song song)'}
+                  </div>
+                </div>
+
+                <div style="display:flex;align-items:center;gap:8px">
+                  <div class="filter-tabs-pill" style="margin:0">
+                    <button class="pill-btn ${state.chartMode === 'multiaxis' ? 'active' : ''}" data-action="set-chart-mode" data-mode="multiaxis" style="font-size:11px;padding:3px 8px">Đa trục</button>
+                    <button class="pill-btn ${state.chartMode === 'normalized' ? 'active' : ''}" data-action="set-chart-mode" data-mode="normalized" style="font-size:11px;padding:3px 8px">Chuẩn hóa %</button>
+                  </div>
+                  <div class="chart-range-pills" style="margin:0">
+                    ${['1W', '1M', '3M', '1Y'].map(r => `
+                      <button class="chart-range-btn ${state.chartRange === r ? 'active' : ''}" data-action="set-chart-range" data-range="${r}">${r}</button>
+                    `).join('')}
+                  </div>
+                </div>
+              </div>
+
+              ${renderMultiAxisChart([activeInst, compareInst].filter(Boolean), state.chartMode, state.chartRange)}
             </div>
           </div>
-          <div style="display:flex;align-items:center;gap:8px">
-            <div class="filter-tabs-pill">
-              <button class="pill-btn ${state.chartMode === 'multiaxis' ? 'active' : ''}" data-action="set-chart-mode" data-mode="multiaxis">Đa trục tung</button>
-              <button class="pill-btn ${state.chartMode === 'normalized' ? 'active' : ''}" data-action="set-chart-mode" data-mode="normalized">Chuẩn hóa %</button>
+
+          <!-- CỘT PHẢI (35%): BẢNG GIÁ NHANH & CHỌN ĐỐI CHIẾU (SCROLLABLE BẰNG BIỂU ĐỒ) -->
+          <div class="overview-quicktable-box market-data-quicktable" style="max-height:400px;display:flex;flex-direction:column;justify-content:space-between">
+            <div class="quicktable-header" style="flex-shrink:0;margin-bottom:8px">
+              <div>
+                <h3 class="quicktable-title">Bảng giá nhanh & Đối chiếu</h3>
+                <div class="quicktable-sub">Click chọn 2 chỉ số để so sánh tương quan</div>
+              </div>
+              <span class="badge badge-source" style="font-size:10px">
+                ${state.selectedInstruments.length} chỉ số đã chọn
+              </span>
             </div>
-            <div class="filter-tabs-pill">
-              <button class="pill-btn ${state.chartRange === '1W' ? 'active' : ''}" data-action="set-chart-range" data-range="1W">1W</button>
-              <button class="pill-btn ${state.chartRange === '1M' ? 'active' : ''}" data-action="set-chart-range" data-range="1M">1M</button>
-              <button class="pill-btn ${state.chartRange === '3M' ? 'active' : ''}" data-action="set-chart-range" data-range="3M">3M</button>
-              <button class="pill-btn ${state.chartRange === '1Y' ? 'active' : ''}" data-action="set-chart-range" data-range="1Y">1Y</button>
+
+            <!-- Khung cuộn mượt mà có chiều cao vừa khít với biểu đồ bên cạnh -->
+            <div class="quicktable-scroll-body" style="flex:1;overflow-y:auto;min-height:0;padding-right:4px">
+              <table class="quicktable-table">
+                <thead>
+                  <tr>
+                    <th style="text-align:left;position:sticky;top:0;background:var(--bg-card);z-index:2">CHỈ SỐ</th>
+                    <th style="text-align:right;position:sticky;top:0;background:var(--bg-card);z-index:2">GIÁ TRỊ</th>
+                    <th style="text-align:right;width:75px;position:sticky;top:0;background:var(--bg-card);z-index:2">Δ</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${instList.map(item => {
+                    const isLocked = item.classification === 'Restricted' && !canRestricted;
+                    const isChecked = state.selectedInstruments.includes(item.id);
+                    const isActive = item.id === activeInst.id;
+                    const isPos = item.pct >= 0;
+                    const pillClass = isPos ? 'pos' : 'neg';
+                    const sign = isPos ? '+' : '';
+
+                    return `
+                      <tr class="quicktable-row ${isActive ? 'active' : ''}" data-action="toggle-instrument-pick" data-inst-id="${item.id}" title="Click để thêm/bớt đối chiếu trên biểu đồ">
+                        <td>
+                          <div class="qp-name" style="display:flex;align-items:center;gap:6px">
+                            <input type="checkbox" ${isChecked ? 'checked' : ''} onclick="event.stopPropagation()" data-action="toggle-instrument-pick" data-inst-id="${item.id}" style="accent-color:var(--accent-teal);cursor:pointer">
+                            <span>${esc(item.short || item.name)}</span>
+                            ${item.classification === 'Restricted' ? `<span class="badge badge-restricted" style="font-size:8.5px;padding:1px 3px">Mật 🔒</span>` : ''}
+                          </div>
+                          <div class="qp-meta" style="margin-left:20px">${esc(item.source)}</div>
+                        </td>
+                        <td style="text-align:right">
+                          ${isLocked ? `
+                            <span style="font-size:11px;color:var(--text-muted)">Đã ẩn</span>
+                          ` : `
+                            <span class="qp-val">${fmtNum(item.value, item.decimals)}</span>
+                            <span class="qp-unit">${esc(item.unit)}</span>
+                          `}
+                        </td>
+                        <td style="text-align:right">
+                          ${isLocked ? `
+                            <span class="badge badge-restricted" style="font-size:9.5px">🔒</span>
+                          ` : `
+                            <span class="ticker-pill ${pillClass}">${sign}${item.pct.toFixed(2).replace('.', ',')}%</span>
+                          `}
+                        </td>
+                      </tr>
+                    `;
+                  }).join('')}
+                </tbody>
+              </table>
+            </div>
+
+            <div class="quicktable-footer" style="flex-shrink:0;margin-top:8px">
+              <span>Bấm dòng để bật/tắt đường vẽ</span>
+              <button class="btn-link" data-action="show-crack-formula-popover" style="font-size:11px;color:var(--accent-teal)">
+                Công thức BSR ↗
+              </button>
             </div>
           </div>
         </div>
 
-        ${renderMultiAxisChart([activeInst, compareInst].filter(Boolean), state.chartMode, state.chartRange)}
-      </section>
-
-      <!-- 2.3 BẢNG DỮ LIỆU LỊCH SỬ -->
-      <section class="card" style="padding:0;overflow:hidden">
-        <div style="padding:14px 20px;border-bottom:1px solid var(--border-card);display:flex;align-items:center;justify-content:space-between">
-          <strong style="font-size:14px;color:var(--text-main)">Bảng Số liệu Lịch sử & Nguồn gốc (Provenance Ledger)</strong>
-          <span style="font-size:11px;color:var(--text-muted)">Cập nhật lần cuối: 14/11/2026 · 09:30 ICT</span>
-        </div>
-        <table class="data-table-bsr">
-          <thead>
-            <tr>
-              <th>Chỉ số thị trường</th>
-              <th>Thời điểm thị trường</th>
-              <th>Thời điểm nạp</th>
-              <th>Giá trị</th>
-              <th>Đơn vị</th>
-              <th>Loại giá</th>
-              <th>Nguồn dữ liệu</th>
-              <th>Chất lượng</th>
-              <th>Phân loại</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${instList.map(item => {
-              const isLocked = item.classification === 'Restricted' && !canRestricted;
-              return `
+        <!-- 2.4 BẢNG SỐ LIỆU LỊCH SỬ & NGUỒN GỐC (THIẾT KẾ THU GỌN, CHUYÊN NGHIỆP) -->
+        <section class="card" style="padding:0;overflow:hidden">
+          <div style="padding:12px 18px;border-bottom:1px solid var(--border-card);display:flex;align-items:center;justify-content:space-between;background:var(--bg-card-subtle)">
+            <div>
+              <strong style="font-size:13.5px;color:var(--text-main)">Bảng Số liệu Lịch sử & Nguồn gốc (Provenance Ledger)</strong>
+              <div style="font-size:11px;color:var(--text-muted);margin-top:2px">Truy xuất nguồn gốc dữ liệu, thời điểm thị trường và phân loại bảo mật</div>
+            </div>
+            <span style="font-size:11px;color:var(--text-muted)">16/11/2026 · 07:57 ICT</span>
+          </div>
+          <div style="overflow-x:auto">
+            <table class="data-table-bsr" style="font-size:12px">
+              <thead>
                 <tr>
-                  <td><strong>${esc(item.name)}</strong></td>
-                  <td>${esc(item.marketTime)}</td>
-                  <td>${esc(item.ingestionTime)}</td>
-                  <td>
-                    ${isLocked ? `<span class="badge badge-restricted">Mật 🔒</span>` : `<strong style="font-family:var(--font-mono);font-size:13.5px">${fmtNum(item.value, item.decimals)}</strong>`}
-                  </td>
-                  <td>${esc(item.unit)}</td>
-                  <td><span class="badge badge-source">${esc(item.priceType)}</span></td>
-                  <td>${esc(item.source)}</td>
-                  <td><span class="badge badge-success">${esc(item.quality)}</span></td>
-                  <td>
-                    ${item.classification === 'Restricted' ? `<span class="badge badge-restricted">Restricted</span>` : `<span class="badge badge-manual">Internal</span>`}
-                  </td>
+                  <th>Chỉ số thị trường</th>
+                  <th>Thời điểm thị trường</th>
+                  <th>Thời điểm nạp</th>
+                  <th style="text-align:right">Giá trị</th>
+                  <th>Đơn vị</th>
+                  <th>Loại giá</th>
+                  <th>Nguồn dữ liệu</th>
+                  <th>Chất lượng</th>
+                  <th>Phân loại</th>
                 </tr>
-              `;
-            }).join('')}
-          </tbody>
-        </table>
-      </section>
+              </thead>
+              <tbody>
+                ${instList.map(item => {
+                  const isLocked = item.classification === 'Restricted' && !canRestricted;
+                  return `
+                    <tr>
+                      <td><strong>${esc(item.name)}</strong></td>
+                      <td>${esc(item.marketTime)}</td>
+                      <td>${esc(item.ingestionTime)}</td>
+                      <td style="text-align:right">
+                        ${isLocked ? `<span class="badge badge-restricted">Mật 🔒</span>` : `<strong style="font-family:var(--font-mono);font-size:13px">${fmtNum(item.value, item.decimals)}</strong>`}
+                      </td>
+                      <td>${esc(item.unit)}</td>
+                      <td><span class="badge badge-source" style="font-size:9.5px">${esc(item.priceType)}</span></td>
+                      <td>${esc(item.source)}</td>
+                      <td><span class="badge badge-success" style="font-size:9.5px">${esc(item.quality)}</span></td>
+                      <td>
+                        ${item.classification === 'Restricted' ? `<span class="badge badge-restricted" style="font-size:9.5px">Restricted</span>` : `<span class="badge badge-manual" style="font-size:9.5px">Internal</span>`}
+                      </td>
+                    </tr>
+                  `;
+                }).join('')}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </div>
     `;
   }
 
@@ -1254,9 +1553,9 @@
         <span class="badge badge-source">Quyền thao tác: Đội Market Intelligence</span>
       </div>
 
-      <div class="split-view-container">
-        <!-- CỘT TRÁI 45% -->
-        <div class="card" style="padding:20px">
+      <div class="split-view-container" style="align-items:stretch">
+        <!-- CỘT TRÁI 46%: PHẦN NHẬP LIỆU -->
+        <div class="card ingest-form-card" style="padding:18px 20px;display:flex;flex-direction:column;min-height:550px;max-height:550px;overflow-y:auto">
           <div class="filter-tabs-pill" style="margin-bottom:18px">
             <button class="pill-btn ${state.ingestionTab === 'quick_text' ? 'active' : ''}" data-action="set-ingest-tab" data-tab="quick_text">
               Nhập nhanh Tin / URL
@@ -1372,9 +1671,9 @@
           ` : ''}
         </div>
 
-        <!-- CỘT PHẢI 55% -->
-        <div class="card" style="padding:0;overflow:hidden">
-          <div style="padding:14px 20px;border-bottom:1px solid var(--border-card);display:flex;justify-content:space-between;align-items:center">
+        <!-- CỘT PHẢI 54%: REVIEW QUEUE (NGANG BẰNG CỘT TRÁI & SCROLLABLE ĐỘC LẬP) -->
+        <div class="card review-queue-card" style="padding:0;overflow:hidden;display:flex;flex-direction:column;min-height:550px;max-height:550px">
+          <div class="review-queue-header" style="padding:14px 20px;border-bottom:1px solid var(--border-card);display:flex;justify-content:space-between;align-items:center;flex-shrink:0;background:var(--bg-card)">
             <div>
               <strong style="font-size:14px;color:var(--text-main)">Luồng Tin tức Đầy đủ & Kiểm duyệt MI (Review Queue)</strong>
               <div style="font-size:11px;color:var(--text-muted)">Phân tách rõ [Nguồn gốc], [AI Tóm tắt], [AI Nhận định]</div>
@@ -1382,9 +1681,10 @@
             <span class="badge badge-ai-summary">Tự động gắn thẻ AI</span>
           </div>
 
-          <div style="padding:14px 20px;display:flex;flex-direction:column;gap:14px">
-            ${D.top10News.slice(0, 5).map(n => `
-              <div style="border:1px solid var(--border-card);border-radius:8px;padding:14px;background:#0E182F">
+          <!-- Khung cuộn mượt mà bên trong Review Queue -->
+          <div class="review-queue-scroll-body" style="padding:14px 18px;display:flex;flex-direction:column;gap:12px;flex:1;overflow-y:auto;min-height:0">
+            ${D.top10News.map(n => `
+              <div style="border:1px solid var(--border-card);border-radius:8px;padding:12px 14px;background:#0E182F;transition:border-color 0.15s">
                 <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
                   <div style="display:flex;align-items:center;gap:6px">
                     <span class="badge badge-source">${esc(n.source)}</span>
@@ -1396,23 +1696,23 @@
                   </div>
                 </div>
 
-                <h4 style="font-size:13.5px;font-weight:700;color:var(--text-main);margin-bottom:6px">${esc(n.title)}</h4>
+                <h4 style="font-size:13px;font-weight:700;color:var(--text-main);margin-bottom:6px;line-height:1.35">${esc(n.title)}</h4>
 
-                <div style="display:flex;flex-direction:column;gap:6px;font-size:12px;margin:8px 0">
-                  <div style="background:rgba(59,130,246,0.12);padding:6px 10px;border-radius:4px;border-left:3px solid #3B82F6">
+                <div style="display:flex;flex-direction:column;gap:5px;font-size:11.5px;margin:8px 0">
+                  <div style="background:rgba(59,130,246,0.12);padding:5px 9px;border-radius:4px;border-left:3px solid #3B82F6">
                     <strong style="color:#60A5FA">[Nguồn gốc]:</strong> Trích nguyên văn từ bản tin ${esc(n.source)}.
                   </div>
-                  <div style="background:rgba(168,85,247,0.12);padding:6px 10px;border-radius:4px;border-left:3px solid #A855F7">
+                  <div style="background:rgba(168,85,247,0.12);padding:5px 9px;border-radius:4px;border-left:3px solid #A855F7">
                     <strong style="color:#C084FC">[AI Tóm tắt]:</strong> ${esc(n.summary)}
                   </div>
-                  <div style="background:rgba(245,158,11,0.12);padding:6px 10px;border-radius:4px;border-left:3px solid #F59E0B">
+                  <div style="background:rgba(245,158,11,0.12);padding:5px 9px;border-radius:4px;border-left:3px solid #F59E0B">
                     <strong style="color:#FBBF24">[AI Nhận định]:</strong> Tác động tích cực đến hiệu quả biên lọc dầu BSR trong ngắn hạn.
                   </div>
                 </div>
 
-                <div style="display:flex;justify-content:space-between;align-items:center;margin-top:10px">
-                  <span style="font-size:11px;color:var(--text-muted)">Trạng thái: Đã kiểm duyệt</span>
-                  <button class="btn btn-sm btn-primary" data-action="publish-news" data-news-id="${n.id}">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px;padding-top:6px;border-top:1px solid rgba(255,255,255,0.05)">
+                  <span style="font-size:10.5px;color:var(--text-muted)">Trạng thái: Đã kiểm duyệt</span>
+                  <button class="btn btn-sm btn-primary" data-action="publish-news" data-news-id="${n.id}" style="padding:3px 10px;font-size:11px">
                     Duyệt xuất bản
                   </button>
                 </div>
@@ -2424,6 +2724,12 @@
           const panel = document.getElementById('inplace-chart-panel');
           if (panel) panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
         }
+        break;
+      }
+
+      case 'close-overview-chart': {
+        state.activeOverviewInstrument = null;
+        render();
         break;
       }
 
